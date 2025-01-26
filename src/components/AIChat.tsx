@@ -70,18 +70,42 @@ export default function AIChat() {
     setInput('')
     setIsTyping(true)
 
-    // TODO: Implement AI response logic here
-    // For now, we'll just show a placeholder response
-    const aiMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      text: "I'm analyzing your financial data. This feature will be implemented soon.",
-      sender: 'ai',
-    }
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+        }),
+      });
 
-    setTimeout(() => {
-      setIsTyping(false)
-      setMessages(prev => [...prev, aiMessage])
-    }, 1000)
+      if (!response.ok) {
+        throw new Error('Failed to get AI response');
+      }
+
+      const data = await response.json();
+      
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: data.message,
+        sender: 'ai',
+      }
+
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to get AI response. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsTyping(false);
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
