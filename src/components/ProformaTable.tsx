@@ -366,6 +366,7 @@ export default function ProformaTable() {
           handleDeleteRow={handleDeleteRow}
           setNewLabel={() => {}}
           showAddRow={true}
+          showDelete={false}
         />
 
         <TableComponent

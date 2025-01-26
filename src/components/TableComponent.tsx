@@ -51,6 +51,7 @@ interface TableComponentProps {
   handleDeleteRow: (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', rowId: string) => void
   setNewLabel: (value: string) => void
   showAddRow?: boolean
+  showDelete?: boolean
 }
 
 const TableComponent: React.FC<TableComponentProps> = ({
@@ -63,7 +64,8 @@ const TableComponent: React.FC<TableComponentProps> = ({
   handlePaste,
   handleDeleteRow,
   setNewLabel,
-  showAddRow = true
+  showAddRow = true,
+  showDelete = true
 }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
   const borderColor = useColorModeValue('gray.200', 'gray.600')
@@ -273,7 +275,7 @@ const TableComponent: React.FC<TableComponentProps> = ({
                 _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
               >
                 <Td w="60px">
-                  {!row.isCalculated && (
+                  {showDelete !== false && !row.isCalculated && (
                     <Tooltip label="Delete row" placement="right">
                       <IconButton
                         aria-label="Delete row"
