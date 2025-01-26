@@ -161,24 +161,30 @@ export default function ProformaTable() {
     })
   }
 
-  const handleAddRow = (type: 'revenue' | 'expense' | 'revenue-deduction') => {
+  const handleAddRow = (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction') => {
     const label = type === 'revenue' 
       ? newRevenueLabel 
       : type === 'expense' 
       ? newExpenseLabel 
+      : type === 'lots'
+      ? ''
       : newRevenueDeductionLabel
     const setLabel = type === 'revenue' 
       ? setNewRevenueLabel 
       : type === 'expense' 
       ? setNewExpenseLabel 
+      : type === 'lots'
+      ? () => {}
       : setNewRevenueDeductionLabel
     const setRows = type === 'revenue' 
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
+      : type === 'lots'
+      ? setLotsRows
       : setRevenueDeductionRows
 
-    if (!label.trim()) {
+    if (type !== 'lots' && !label.trim()) {
       toast({
         title: 'Label is required',
         description: 'Please enter a label for the new item',
@@ -192,7 +198,7 @@ export default function ProformaTable() {
 
     const newRow: TableRow = {
       id: uuidv4(),
-      label: label,
+      label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : label,
       values: Array(columns).fill('0'),
       total: 0,
       perUnit: 0
@@ -202,6 +208,8 @@ export default function ProformaTable() {
       ? 'Total Gross Revenue' 
       : type === 'expense' 
       ? 'Total Expenses' 
+      : type === 'lots'
+      ? ''
       : 'Net Revenue'
 
     if (type === 'revenue') {
@@ -210,13 +218,15 @@ export default function ProformaTable() {
     } else if (type === 'expense') {
       setExpenseRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), newRow], totalLabel))
       setNewExpenseLabel('')
+    } else if (type === 'lots') {
+      setLotsRows(rows => calculateRowTotals([...rows, newRow]))
     } else {
       setRevenueDeductionRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), newRow], totalLabel))
       setNewRevenueDeductionLabel('')
     }
 
     toast({
-      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : 'Revenue Deduction'} item added`,
+      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'lots' ? 'Lots' : 'Revenue Deduction'} item added`,
       status: 'success',
       duration: 2000,
       position: 'top-right',
@@ -282,26 +292,30 @@ export default function ProformaTable() {
     })
   }
 
-  const handleDeleteRow = (type: 'revenue' | 'expense' | 'revenue-deduction', rowId: string) => {
+  const handleDeleteRow = (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', rowId: string) => {
     const setRows = type === 'revenue' 
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
+      : type === 'lots'
+      ? setLotsRows
       : setRevenueDeductionRows
 
     const totalLabel = type === 'revenue' 
       ? 'Total Gross Revenue' 
       : type === 'expense' 
       ? 'Total Expenses' 
+      : type === 'lots'
+      ? ''
       : 'Net Revenue'
 
     setRows(rows => {
       const updatedRows = rows.filter(row => !row.isCalculated && row.id !== rowId)
-      return updateRowsWithTotal(updatedRows, totalLabel)
+      return type === 'lots' ? calculateRowTotals(updatedRows) : updateRowsWithTotal(updatedRows, totalLabel)
     })
     
     toast({
-      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : 'Revenue Deduction'} item deleted`,
+      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'lots' ? 'Lots' : 'Revenue Deduction'} item deleted`,
       status: 'success',
       duration: 2000,
       position: 'top-right',
@@ -347,11 +361,11 @@ export default function ProformaTable() {
           columns={columns}
           newLabel=""
           handleCellChange={handleCellChange}
-          handleAddRow={() => {}}
+          handleAddRow={handleAddRow}
           handlePaste={handlePaste}
-          handleDeleteRow={() => {}}
+          handleDeleteRow={handleDeleteRow}
           setNewLabel={() => {}}
-          showAddRow={false}
+          showAddRow={true}
         />
 
         <TableComponent
