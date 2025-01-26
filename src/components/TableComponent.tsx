@@ -21,34 +21,26 @@ import {
 } from '@chakra-ui/react'
 import { AddIcon, ChevronRightIcon, DeleteIcon } from '@chakra-ui/icons'
 import { motion } from 'framer-motion'
+import { TableRow, TableType } from '../types/table'
 
 const MotionBox = motion(Box)
 const MotionFlex = motion(Flex)
 const MotionTr = motion(Tr)
 
-interface TableRow {
-  id: string
-  label: string
-  values: string[]
-  total?: number
-  perUnit?: number
-  isCalculated?: boolean
-}
-
 interface TableComponentProps {
-  type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction'
+  type: TableType
   rows: TableRow[]
   columns: number
   newLabel: string
   handleCellChange: (
-    type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction',
+    type: TableType,
     rowId: string,
     columnIndex: number,
     value: string
   ) => void
-  handleAddRow: (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction') => void
-  handlePaste: (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', e: React.ClipboardEvent) => void
-  handleDeleteRow: (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', rowId: string) => void
+  handleAddRow: (type: TableType) => void
+  handlePaste: (type: TableType, e: React.ClipboardEvent) => void
+  handleDeleteRow: (type: TableType, rowId: string) => void
   setNewLabel: (value: string) => void
   showAddRow?: boolean
   showDelete?: boolean

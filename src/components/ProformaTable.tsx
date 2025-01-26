@@ -22,7 +22,7 @@ interface TableRow {
   label: string
   values: string[]
   total: number
-  perUnit: number
+  perUnit?: number
   isCalculated?: boolean
 }
 
@@ -36,14 +36,14 @@ export default function ProformaTable() {
       label: 'Lots Developed',
       values: Array(5).fill('0'),
       total: 0,
-      perUnit: 0
+      perUnit: undefined
     },
     {
       id: 'lots-sold',
       label: 'Lots Sold',
       values: Array(5).fill('0'),
       total: 0,
-      perUnit: 0
+      perUnit: undefined
     }
   ])
   const [newRevenueLabel, setNewRevenueLabel] = useState('')
@@ -56,21 +56,28 @@ export default function ProformaTable() {
   const gradientStart = useColorModeValue('blue.400', 'blue.200')
   const gradientEnd = useColorModeValue('purple.500', 'purple.300')
 
-  const calculateRowTotals = (rows: TableRow[]): TableRow[] => {
+  const getTotalLotsSold = () => {
+    const lotsSoldRow = lotsRows.find(row => row.id === 'lots-sold')
+    if (!lotsSoldRow) return 0
+    return lotsSoldRow.total
+  }
+
+  const calculateRowTotals = (rows: TableRow[], type?: 'lots'): TableRow[] => {
     return rows.map(row => {
       const numericValues = row.values.map(v => parseFloat(v) || 0)
       const total = numericValues.reduce((sum, val) => sum + val, 0)
-      const perUnit = total / numericValues.length
       
       return {
         ...row,
         total,
-        perUnit: isNaN(perUnit) ? 0 : perUnit
+        perUnit: type === 'lots' ? undefined : total
       }
     })
   }
 
   const calculateTotalRow = (rows: TableRow[], label: string): TableRow => {
+    const totalLotsSold = getTotalLotsSold()
+    
     const totalValues = Array(columns).fill('0').map((_, colIndex) => {
       const sum = rows
         .filter(row => !row.isCalculated)
@@ -78,12 +85,14 @@ export default function ProformaTable() {
       return sum.toString()
     })
 
+    const rowTotal = totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+
     return {
       id: `total-${label.toLowerCase().replace(' ', '-')}`,
       label,
       values: totalValues,
-      total: totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0),
-      perUnit: totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0) / columns,
+      total: rowTotal,
+      perUnit: totalLotsSold > 0 ? rowTotal / totalLotsSold : 0,
       isCalculated: true
     }
   }
@@ -105,6 +114,12 @@ export default function ProformaTable() {
   useEffect(() => {
     setExpenseRows(rows => updateRowsWithTotal(rows, 'Total Expenses'))
   }, [columns])
+
+  useEffect(() => {
+    setRevenueRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Gross Revenue'))
+    setExpenseRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Expenses'))
+    setRevenueDeductionRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Net Revenue'))
+  }, [lotsRows])
 
   const handleCellChange = (
     type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction',
@@ -132,7 +147,7 @@ export default function ProformaTable() {
             ? { ...row, values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)) }
             : row
         )
-        return calculateRowTotals(newLotsRows)
+        return calculateRowTotals(newLotsRows, 'lots')
       })
       return
     }
@@ -201,7 +216,7 @@ export default function ProformaTable() {
       label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : label,
       values: Array(columns).fill('0'),
       total: 0,
-      perUnit: 0
+      perUnit: type === 'lots' ? undefined : 0
     }
 
     const totalLabel = type === 'revenue' 
@@ -212,16 +227,18 @@ export default function ProformaTable() {
       ? ''
       : 'Net Revenue'
 
+    const calculatedNewRow = calculateRowTotals([newRow], type === 'lots' ? 'lots' : undefined)[0]
+
     if (type === 'revenue') {
-      setRevenueRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), newRow], totalLabel))
+      setRevenueRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
       setNewRevenueLabel('')
     } else if (type === 'expense') {
-      setExpenseRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), newRow], totalLabel))
+      setExpenseRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
       setNewExpenseLabel('')
     } else if (type === 'lots') {
-      setLotsRows(rows => calculateRowTotals([...rows, newRow]))
+      setLotsRows(rows => calculateRowTotals([...rows, calculatedNewRow], 'lots'))
     } else {
-      setRevenueDeductionRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), newRow], totalLabel))
+      setRevenueDeductionRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
       setNewRevenueDeductionLabel('')
     }
 
@@ -288,7 +305,7 @@ export default function ProformaTable() {
         }
         return row
       })
-      return type === 'lots' ? calculateRowTotals(updatedRows) : updateRowsWithTotal(updatedRows, totalLabel)
+      return type === 'lots' ? calculateRowTotals(updatedRows, 'lots') : updateRowsWithTotal(updatedRows, totalLabel)
     })
   }
 
@@ -311,7 +328,7 @@ export default function ProformaTable() {
 
     setRows(rows => {
       const updatedRows = rows.filter(row => !row.isCalculated && row.id !== rowId)
-      return type === 'lots' ? calculateRowTotals(updatedRows) : updateRowsWithTotal(updatedRows, totalLabel)
+      return type === 'lots' ? calculateRowTotals(updatedRows, 'lots') : updateRowsWithTotal(updatedRows, totalLabel)
     })
     
     toast({
