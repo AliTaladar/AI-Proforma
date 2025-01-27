@@ -63,6 +63,7 @@ export default function ProformaTable() {
   }
 
   const calculateRowTotals = (rows: TableRow[], type?: 'lots'): TableRow[] => {
+    const totalLotsSold = getTotalLotsSold()
     return rows.map(row => {
       const numericValues = row.values.map(v => parseFloat(v) || 0)
       const total = numericValues.reduce((sum, val) => sum + val, 0)
@@ -70,7 +71,7 @@ export default function ProformaTable() {
       return {
         ...row,
         total,
-        perUnit: type === 'lots' ? undefined : total
+        perUnit: type === 'lots' ? undefined : totalLotsSold > 0 ? total / totalLotsSold : 0
       }
     })
   }
@@ -142,17 +143,26 @@ export default function ProformaTable() {
 
     if (type === 'lots') {
       setLotsRows(rows => {
-        const newLotsRows = rows.map(row =>
-          row.id === rowId
-            ? { 
-                ...row, 
-                values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)),
-                total: row.values.map((v, i) => i === columnIndex ? numericValue : v).reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-              }
-            : row
-        )
+        const newLotsRows = rows.map(row => {
+          if (row.id === rowId) {
+            const newValues = row.values.map((v, i) => (i === columnIndex ? numericValue : v))
+            const total = newValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+            return { 
+              ...row, 
+              values: newValues,
+              total
+            }
+          }
+          return row
+        })
         return newLotsRows
       })
+
+      // After updating lots, we need to update per unit values in other tables
+      const totalLotsSold = getTotalLotsSold()
+      setRevenueRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
+      setExpenseRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
+      setRevenueDeductionRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
       return
     }
 
@@ -168,18 +178,27 @@ export default function ProformaTable() {
       ? 'Total Expenses' 
       : 'Net Revenue'
 
+    const totalLotsSold = getTotalLotsSold()
     setRows(rows => {
       const updatedRows = rows
         .filter(row => !row.isCalculated)
-        .map(row =>
-          row.id === rowId
-            ? { 
-                ...row, 
-                values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)),
-                total: row.values.map((v, i) => i === columnIndex ? numericValue : v).reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-              }
-            : row
-        )
+        .map(row => {
+          if (row.id === rowId) {
+            const newValues = row.values.map((v, i) => (i === columnIndex ? numericValue : v))
+            const total = newValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+            return { 
+              ...row, 
+              values: newValues,
+              total,
+              perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
+            }
+          }
+          // Also update perUnit for other rows
+          return {
+            ...row,
+            perUnit: totalLotsSold > 0 ? row.total / totalLotsSold : 0
+          }
+        })
       return updateRowsWithTotal(updatedRows, totalLabel)
     })
   }
