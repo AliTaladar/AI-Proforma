@@ -71,6 +71,9 @@ export default function AIChat() {
     setIsTyping(true)
 
     try {
+      // Get the current table data
+      const tableData = (window as any).getProformaTableData?.()
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -78,6 +81,7 @@ export default function AIChat() {
         },
         body: JSON.stringify({
           messages: [...messages, userMessage],
+          tableData: tableData || null,
         }),
       });
 
@@ -104,7 +108,7 @@ export default function AIChat() {
         isClosable: true,
       });
     } finally {
-      setIsTyping(false);
+      setIsTyping(false)
     }
   }
 

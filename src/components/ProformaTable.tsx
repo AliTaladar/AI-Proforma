@@ -26,6 +26,13 @@ interface TableRow {
   isCalculated?: boolean
 }
 
+export interface TableData {
+  revenueRows: TableRow[];
+  expenseRows: TableRow[];
+  revenueDeductionRows: TableRow[];
+  lotsRows: TableRow[];
+}
+
 export default function ProformaTable() {
   const [revenueRows, setRevenueRows] = useState<TableRow[]>([])
   const [expenseRows, setExpenseRows] = useState<TableRow[]>([])
@@ -366,6 +373,19 @@ export default function ProformaTable() {
       isClosable: true,
     })
   }
+
+  // Function to get current table data
+  const getTableData = (): TableData => ({
+    revenueRows,
+    expenseRows,
+    revenueDeductionRows,
+    lotsRows
+  })
+
+  // Make getTableData available globally
+  useEffect(() => {
+    ;(window as any).getProformaTableData = getTableData
+  }, [revenueRows, expenseRows, revenueDeductionRows, lotsRows])
 
   return (
     <Container maxW="container.xl" py={8}>
