@@ -294,11 +294,13 @@ const TableComponent: React.FC<TableComponentProps> = ({
                   {row.label}
                 </Td>
                 <Td minW="120px" textAlign="right" fontWeight="medium" color={getTypeColor(type)}>
-                  {row.total?.toLocaleString('en-US', { 
-                    style: 'currency', 
-                    currency: 'USD',
-                    maximumFractionDigits: 0
-                  })}
+                  {type === 'lots' 
+                    ? row.total?.toLocaleString('en-US', { maximumFractionDigits: 0 })
+                    : row.total?.toLocaleString('en-US', { 
+                        style: 'currency', 
+                        currency: 'USD',
+                        maximumFractionDigits: 0 
+                      })}
                 </Td>
                 <Td minW="120px" textAlign="right" fontWeight="medium" color={getTypeColor(type)}>
                   {row.perUnit?.toLocaleString('en-US', { 

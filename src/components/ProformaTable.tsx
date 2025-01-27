@@ -144,10 +144,14 @@ export default function ProformaTable() {
       setLotsRows(rows => {
         const newLotsRows = rows.map(row =>
           row.id === rowId
-            ? { ...row, values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)) }
+            ? { 
+                ...row, 
+                values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)),
+                total: row.values.map((v, i) => i === columnIndex ? numericValue : v).reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+              }
             : row
         )
-        return calculateRowTotals(newLotsRows, 'lots')
+        return newLotsRows
       })
       return
     }
@@ -169,7 +173,11 @@ export default function ProformaTable() {
         .filter(row => !row.isCalculated)
         .map(row =>
           row.id === rowId
-            ? { ...row, values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)) }
+            ? { 
+                ...row, 
+                values: row.values.map((v, i) => (i === columnIndex ? numericValue : v)),
+                total: row.values.map((v, i) => i === columnIndex ? numericValue : v).reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+              }
             : row
         )
       return updateRowsWithTotal(updatedRows, totalLabel)
@@ -382,7 +390,7 @@ export default function ProformaTable() {
           handlePaste={handlePaste}
           handleDeleteRow={handleDeleteRow}
           setNewLabel={() => {}}
-          showAddRow={true}
+          showAddRow={false}
           showDelete={false}
         />
 
