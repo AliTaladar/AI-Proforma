@@ -1,24 +1,45 @@
 import { NextResponse } from 'next/server';
 import openai from '@/lib/openai';
+import { 
+  calculateIRR, 
+  calculateNPV, 
+  calculatePaybackPeriod,
+  extractCashFlows,
+  formatCurrency
+} from '@/utils/financialCalculations';
 
 export async function POST(req: Request) {
   try {
     const { messages, tableData } = await req.json();
 
+    // Extract financial metrics if table data is available
+    let financialMetrics = '';
+    if (tableData) {
+      const { values: cashFlows, years } = extractCashFlows(tableData);
+      const irr = calculateIRR(cashFlows);
+      const npv = calculateNPV(0.1, cashFlows); // Using 10% discount rate
+      const payback = calculatePaybackPeriod(cashFlows);
+
+      financialMetrics = `\nMetrics:\n` +
+        `IRR=${irr.formatted}, NPV=${npv.formatted}, Payback=${payback.formatted}\n` +
+        `Flows: ${years.map((year, i) => `${year}:${formatCurrency(cashFlows[i])}`).join(', ')}`;
+    }
+
     // Prepare the message array with the system message first
     const messageArray = [
       {
         role: 'system',
-        content: 'You are a helpful AI assistant. When analyzing the proforma table data, here is what you have access to:\n' +
-                'revenueRows: Revenue table data\n' +
-                'expenseRows: Expense table data\n' +
-                'revenueDeductionRows: Revenue deduction table data\n' +
-                'lotsRows: Lots table data\n' +
-                'Each row has: id, label, values (array for each year), total, and perUnit'
+        content: 'You are a financial analyst. Rules:\n' +
+                '1. Use ONLY provided metrics, never explain calculations\n' +
+                '2. Return JSON with "text" and optional "chartData"\n\n' +
+                'Examples:\n' +
+                '{"text": "IRR: 15.5%"}\n\n' +
+                '{"text": "Profit: Y1:-$200K, Y2:$300K", "chartData":{"data":[{"year":"Y1","value":-200},{"year":"Y2","value":300}],"xAxis":"year","yAxis":"value"}}\n\n' +
+                (financialMetrics ? financialMetrics : 'No financial data available.')
       },
       ...messages.map((msg: any) => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text + (msg.sender === 'user' && tableData ? `\n\nCurrent Table Data:\n${JSON.stringify(tableData, null, 2)}` : '')
+        content: msg.text + (msg.sender === 'user' && tableData ? '\nTable data available.' : '')
       }))
     ];
 
@@ -29,8 +50,17 @@ export async function POST(req: Request) {
       max_tokens: 500,
     });
 
+    let aiResponse;
+    try {
+      aiResponse = JSON.parse(response.choices[0].message.content);
+    } catch (e) {
+      // If response is not JSON, return it as plain text
+      aiResponse = { text: response.choices[0].message.content };
+    }
+    
     return NextResponse.json({
-      message: response.choices[0].message.content
+      message: aiResponse.text,
+      chartData: aiResponse.chartData
     });
   } catch (error) {
     console.error('OpenAI API error:', error);
