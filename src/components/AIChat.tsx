@@ -176,7 +176,7 @@ export default function AIChat() {
                       }}
                     />
                     <Tooltip 
-                      formatter={(value: any) => [`$${value}`, message.chartData.yAxis]}
+                      formatter={(value: any) => [`$${value}`, message.chartData?.yAxis || 'Value']}
                       contentStyle={{
                         backgroundColor: bubbleBg,
                         border: 'none',
@@ -186,7 +186,7 @@ export default function AIChat() {
                     />
                     <Line 
                       type="monotone" 
-                      dataKey={message.chartData.yAxis} 
+                      dataKey={message.chartData?.yAxis} 
                       stroke="#8884d8"
                       dot={{ fill: '#8884d8' }}
                     />
