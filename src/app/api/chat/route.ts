@@ -50,12 +50,14 @@ export async function POST(req: Request) {
       max_tokens: 500,
     });
 
+    const content = response.choices[0].message.content || '';
+    
     let aiResponse;
     try {
-      aiResponse = JSON.parse(response.choices[0].message.content);
+      aiResponse = JSON.parse(content);
     } catch (e) {
       // If response is not JSON, return it as plain text
-      aiResponse = { text: response.choices[0].message.content };
+      aiResponse = { text: content };
     }
     
     return NextResponse.json({
