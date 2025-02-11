@@ -12,15 +12,33 @@ export interface CashFlowData {
 
 export const calculateIRR = (cashFlows: number[]): FinancialMetric => {
   try {
-    const irr = financial.irr(cashFlows) * 100;
+    // Check for valid IRR calculation pattern
+    if (cashFlows.length < 2 || !cashFlows.some(flow => flow < 0) || !cashFlows.some(flow => flow > 0)) {
+      return {
+        value: 0,
+        formatted: 'N/A - Invalid cash flow pattern'
+      };
+    }
+
+    const irr = financial.irr(cashFlows);
+    
+    // Check if IRR calculation returned a valid number
+    if (isNaN(irr) || !isFinite(irr)) {
+      return {
+        value: 0,
+        formatted: 'N/A - No solution found'
+      };
+    }
+
+    const irrPercentage = irr * 100;
     return {
-      value: irr,
-      formatted: `${irr.toFixed(2)}%`
+      value: irrPercentage,
+      formatted: `${irrPercentage.toFixed(2)}%`
     };
   } catch (error) {
     return {
       value: 0,
-      formatted: 'N/A - Invalid cash flows'
+      formatted: 'N/A - Calculation error'
     };
   }
 };
@@ -74,17 +92,29 @@ export const extractCashFlows = (tableData: any): CashFlowData => {
   
   // Calculate net cash flow for each year
   const cashFlows = years.map(year => {
+    // Calculate total revenue
     const revenue = tableData.revenueRows.reduce((sum: number, row: any) => 
-      sum + (row.values[year] || 0), 0);
+      sum + (Number(row.values[year]) || 0), 0);
     
+    // Calculate total expenses
     const expenses = tableData.expenseRows.reduce((sum: number, row: any) => 
-      sum + (row.values[year] || 0), 0);
+      sum + (Number(row.values[year]) || 0), 0);
     
+    // Calculate total deductions
     const deductions = tableData.revenueDeductionRows.reduce((sum: number, row: any) => 
-      sum + (row.values[year] || 0), 0);
+      sum + (Number(row.values[year]) || 0), 0);
     
+    // Return net cash flow
     return revenue - expenses - deductions;
   });
+
+  // If all cash flows are 0 or the pattern is invalid for IRR
+  if (cashFlows.every(flow => flow === 0) || !cashFlows.some(flow => flow < 0) || !cashFlows.some(flow => flow > 0)) {
+    return {
+      values: [0], // Return invalid cash flow pattern
+      years: years
+    };
+  }
 
   return {
     values: cashFlows,
