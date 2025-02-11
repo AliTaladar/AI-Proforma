@@ -7,4 +7,4 @@ export interface TableRow {
   isCalculated?: boolean
 }
 
-export type TableType = 'revenue' | 'expense' | 'lots' | 'revenue-deduction'
+export type TableType = 'revenue' | 'expense' | 'lots' | 'debt-financing'

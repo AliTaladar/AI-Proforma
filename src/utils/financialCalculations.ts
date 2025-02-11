@@ -87,37 +87,48 @@ export const formatCurrency = (value: number): string => {
 };
 
 export const extractCashFlows = (tableData: any): CashFlowData => {
-  // Assuming the structure from your proforma data
-  const years = Object.keys(tableData.revenueRows[0]?.values || {});
-  
-  // Calculate net cash flow for each year
-  const cashFlows = years.map(year => {
-    // Calculate total revenue
-    const revenue = tableData.revenueRows.reduce((sum: number, row: any) => 
-      sum + (Number(row.values[year]) || 0), 0);
-    
-    // Calculate total expenses
-    const expenses = tableData.expenseRows.reduce((sum: number, row: any) => 
-      sum + (Number(row.values[year]) || 0), 0);
-    
-    // Calculate total deductions
-    const deductions = tableData.revenueDeductionRows.reduce((sum: number, row: any) => 
-      sum + (Number(row.values[year]) || 0), 0);
-    
-    // Return net cash flow
-    return revenue - expenses - deductions;
-  });
+  try {
+    // Get years from the first row that has values
+    const firstRow = tableData.revenueRows?.[0] || tableData.expenseRows?.[0] || tableData.lotsRows?.[0] || tableData.debtFinancingRows?.[0];
+    if (!firstRow) {
+      throw new Error('No table data available');
+    }
 
-  // If all cash flows are 0 or the pattern is invalid for IRR
-  if (cashFlows.every(flow => flow === 0) || !cashFlows.some(flow => flow < 0) || !cashFlows.some(flow => flow > 0)) {
+    // Get array length for number of years
+    const numYears = firstRow.values.length;
+    const years = Array.from({ length: numYears }, (_, i) => `Y${i + 1}`);
+    
+    // Calculate net cash flow for each year
+    const cashFlows = years.map((_, yearIndex) => {
+      // Calculate total revenue
+      const revenue = tableData.revenueRows?.reduce((sum: number, row: any) => 
+        sum + (Number(row.values[yearIndex]) || 0), 0) || 0;
+      
+      // Calculate total expenses
+      const expenses = tableData.expenseRows?.reduce((sum: number, row: any) => 
+        sum + (Number(row.values[yearIndex]) || 0), 0) || 0;
+      
+      // Return net cash flow
+      return revenue - expenses;
+    });
+
+    // If all cash flows are 0 or the pattern is invalid for IRR
+    if (cashFlows.every(flow => flow === 0)) {
+      return {
+        values: [0], // Return invalid cash flow pattern
+        years: ['Y1']
+      };
+    }
+
     return {
-      values: [0], // Return invalid cash flow pattern
+      values: cashFlows,
       years: years
     };
+  } catch (error) {
+    console.error('Error extracting cash flows:', error);
+    return {
+      values: [0],
+      years: ['Y1']
+    };
   }
-
-  return {
-    values: cashFlows,
-    years: years
-  };
 };

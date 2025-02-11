@@ -29,14 +29,13 @@ interface TableRow {
 export interface TableData {
   revenueRows: TableRow[];
   expenseRows: TableRow[];
-  revenueDeductionRows: TableRow[];
   lotsRows: TableRow[];
+  debtFinancingRows: TableRow[];
 }
 
 export default function ProformaTable() {
   const [revenueRows, setRevenueRows] = useState<TableRow[]>([])
   const [expenseRows, setExpenseRows] = useState<TableRow[]>([])
-  const [revenueDeductionRows, setRevenueDeductionRows] = useState<TableRow[]>([])
   const [lotsRows, setLotsRows] = useState<TableRow[]>([
     {
       id: 'lots-developed',
@@ -53,9 +52,41 @@ export default function ProformaTable() {
       perUnit: undefined
     }
   ])
+  const [debtFinancingRows, setDebtFinancingRows] = useState<TableRow[]>([
+    {
+      id: 'beginning-loan-balance',
+      label: 'Beginning Loan Balance',
+      values: Array(5).fill('0'),
+      total: 0
+    },
+    {
+      id: 'draws',
+      label: 'Draws',
+      values: Array(5).fill('0'),
+      total: 0
+    },
+    {
+      id: 'interest',
+      label: 'Interest',
+      values: Array(5).fill('0'),
+      total: 0
+    },
+    {
+      id: 'principal-repayment',
+      label: 'Principal Repayment',
+      values: Array(5).fill('0'),
+      total: 0
+    },
+    {
+      id: 'payoff',
+      label: 'Payoff',
+      values: Array(5).fill('0'),
+      total: 0
+    }
+  ])
   const [newRevenueLabel, setNewRevenueLabel] = useState('')
   const [newExpenseLabel, setNewExpenseLabel] = useState('')
-  const [newRevenueDeductionLabel, setNewRevenueDeductionLabel] = useState('')
+  const [newDebtFinancingLabel, setNewDebtFinancingLabel] = useState('')
   const [columns, setColumns] = useState(5)
   const toast = useToast()
   const { colorMode, toggleColorMode } = useColorMode()
@@ -112,11 +143,39 @@ export default function ProformaTable() {
   }
 
   useEffect(() => {
-    setRevenueRows(rows => updateRowsWithTotal(rows, 'Total Gross Revenue'))
-  }, [columns])
+    setRevenueRows(rows => {
+      const updatedRows = rows.map(row => {
+        if (row.isCalculated) return row;
+        const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+        const totalLotsSold = getTotalLotsSold()
+        return {
+          ...row,
+          total,
+          perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
+        }
+      })
+      return updateRowsWithTotal(updatedRows, 'Total Gross Revenue')
+    })
+  }, [columns, lotsRows])
 
   useEffect(() => {
-    setRevenueDeductionRows(rows => updateRowsWithTotal(rows, 'Net Revenue'))
+    setExpenseRows(rows => {
+      const updatedRows = rows.map(row => {
+        if (row.isCalculated) return row;
+        const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+        const totalLotsSold = getTotalLotsSold()
+        return {
+          ...row,
+          total,
+          perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
+        }
+      })
+      return updateRowsWithTotal(updatedRows, 'Total Expenses')
+    })
+  }, [columns, lotsRows])
+
+  useEffect(() => {
+    setRevenueRows(rows => updateRowsWithTotal(rows, 'Total Gross Revenue'))
   }, [columns])
 
   useEffect(() => {
@@ -124,13 +183,68 @@ export default function ProformaTable() {
   }, [columns])
 
   useEffect(() => {
+    const calculateEndingLoanBalance = () => {
+      const beginningBalance = debtFinancingRows.find(row => row.id === 'beginning-loan-balance')?.values || []
+      const draws = debtFinancingRows.find(row => row.id === 'draws')?.values || []
+      const principalRepayment = debtFinancingRows.find(row => row.id === 'principal-repayment')?.values || []
+      const payoff = debtFinancingRows.find(row => row.id === 'payoff')?.values || []
+      const existingEndingBalance = debtFinancingRows.find(row => row.id === 'ending-loan-balance')
+
+      const endingBalanceValues = beginningBalance.map((_, index) => {
+        const beginning = parseFloat(beginningBalance[index]) || 0
+        const draw = parseFloat(draws[index]) || 0
+        const principal = parseFloat(principalRepayment[index]) || 0
+        const pay = parseFloat(payoff[index]) || 0
+        return (beginning + draw - principal - pay).toString()
+      })
+
+      const endingBalanceTotal = endingBalanceValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+
+      // Only update if values have changed
+      if (!existingEndingBalance || 
+          JSON.stringify(existingEndingBalance.values) !== JSON.stringify(endingBalanceValues) ||
+          existingEndingBalance.total !== endingBalanceTotal) {
+        
+        const endingBalanceRow: TableRow = {
+          id: 'ending-loan-balance',
+          label: 'Ending Loan Balance',
+          values: endingBalanceValues,
+          total: endingBalanceTotal,
+          isCalculated: true
+        }
+
+        setDebtFinancingRows(rows => {
+          const nonEndingRows = rows.filter(row => row.id !== 'ending-loan-balance')
+          return [...nonEndingRows, endingBalanceRow]
+        })
+      }
+    }
+
+    calculateEndingLoanBalance()
+  }, [debtFinancingRows])
+
+  useEffect(() => {
     setRevenueRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Gross Revenue'))
     setExpenseRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Expenses'))
-    setRevenueDeductionRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Net Revenue'))
   }, [lotsRows])
 
+  useEffect(() => {
+    // Expose table data to window object for AI Assistant
+    (window as any).getProformaTableData = () => ({
+      revenueRows,
+      expenseRows,
+      lotsRows,
+      debtFinancingRows
+    });
+
+    // Cleanup
+    return () => {
+      delete (window as any).getProformaTableData;
+    };
+  }, [revenueRows, expenseRows, lotsRows, debtFinancingRows]);
+
   const handleCellChange = (
-    type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction',
+    type: 'revenue' | 'expense' | 'lots' | 'debt-financing',
     rowId: string,
     columnIndex: number,
     value: string
@@ -148,28 +262,19 @@ export default function ProformaTable() {
       return
     }
 
-    if (type === 'lots') {
-      setLotsRows(rows => {
-        const newLotsRows = rows.map(row => {
+    if (type === 'debt-financing') {
+      setDebtFinancingRows(prevRows => {
+        const updatedRows = prevRows.map(row => {
           if (row.id === rowId) {
-            const newValues = row.values.map((v, i) => (i === columnIndex ? numericValue : v))
+            const newValues = [...row.values]
+            newValues[columnIndex] = numericValue
             const total = newValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-            return { 
-              ...row, 
-              values: newValues,
-              total
-            }
+            return { ...row, values: newValues, total }
           }
           return row
         })
-        return newLotsRows
+        return updatedRows
       })
-
-      // After updating lots, we need to update per unit values in other tables
-      const totalLotsSold = getTotalLotsSold()
-      setRevenueRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
-      setExpenseRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
-      setRevenueDeductionRows(rows => calculateRowTotals(rows.filter(row => !row.isCalculated)))
       return
     }
 
@@ -177,63 +282,63 @@ export default function ProformaTable() {
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
-      : setRevenueDeductionRows
+      : setLotsRows
 
     const totalLabel = type === 'revenue' 
       ? 'Total Gross Revenue' 
       : type === 'expense' 
-      ? 'Total Expenses' 
-      : 'Net Revenue'
+      ? 'Total Expenses'
+      : ''
 
-    const totalLotsSold = getTotalLotsSold()
-    setRows(rows => {
-      const updatedRows = rows
-        .filter(row => !row.isCalculated)
-        .map(row => {
-          if (row.id === rowId) {
-            const newValues = row.values.map((v, i) => (i === columnIndex ? numericValue : v))
-            const total = newValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-            return { 
-              ...row, 
-              values: newValues,
-              total,
-              perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
-            }
-          }
-          // Also update perUnit for other rows
+    setRows(prevRows => {
+      const updatedRows = prevRows.map(row => {
+        if (row.id === rowId) {
+          const newValues = [...row.values]
+          newValues[columnIndex] = numericValue
+          const total = newValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+          const totalLotsSold = getTotalLotsSold()
           return {
             ...row,
-            perUnit: totalLotsSold > 0 ? row.total / totalLotsSold : 0
+            values: newValues,
+            total,
+            perUnit: type !== 'lots' && totalLotsSold > 0 ? total / totalLotsSold : undefined
           }
-        })
-      return updateRowsWithTotal(updatedRows, totalLabel)
+        }
+        return row
+      })
+
+      if (type === 'lots') {
+        return calculateRowTotals(updatedRows, 'lots')
+      } else {
+        return updateRowsWithTotal(updatedRows.filter(r => !r.isCalculated), totalLabel)
+      }
     })
   }
 
-  const handleAddRow = (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction') => {
+  const handleAddRow = (type: 'revenue' | 'expense' | 'lots' | 'debt-financing') => {
     const label = type === 'revenue' 
       ? newRevenueLabel 
       : type === 'expense' 
       ? newExpenseLabel 
-      : type === 'lots'
-      ? ''
-      : newRevenueDeductionLabel
+      : type === 'debt-financing'
+      ? newDebtFinancingLabel
+      : ''
     const setLabel = type === 'revenue' 
       ? setNewRevenueLabel 
       : type === 'expense' 
       ? setNewExpenseLabel 
-      : type === 'lots'
-      ? () => {}
-      : setNewRevenueDeductionLabel
+      : type === 'debt-financing'
+      ? setNewDebtFinancingLabel
+      : () => {}
     const setRows = type === 'revenue' 
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
-      : type === 'lots'
-      ? setLotsRows
-      : setRevenueDeductionRows
+      : type === 'debt-financing'
+      ? setDebtFinancingRows
+      : setLotsRows
 
-    if (type !== 'lots' && !label.trim()) {
+    if (type !== 'lots' && type !== 'debt-financing' && !label.trim()) {
       toast({
         title: 'Label is required',
         description: 'Please enter a label for the new item',
@@ -247,7 +352,7 @@ export default function ProformaTable() {
 
     const newRow: TableRow = {
       id: uuidv4(),
-      label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : label,
+      label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : type === 'debt-financing' ? `Debt Financing ${debtFinancingRows.length + 1}` : label,
       values: Array(columns).fill('0'),
       total: 0,
       perUnit: type === 'lots' ? undefined : 0
@@ -256,10 +361,10 @@ export default function ProformaTable() {
     const totalLabel = type === 'revenue' 
       ? 'Total Gross Revenue' 
       : type === 'expense' 
-      ? 'Total Expenses' 
-      : type === 'lots'
-      ? ''
-      : 'Net Revenue'
+      ? 'Total Expenses'
+      : type === 'debt-financing'
+      ? 'Ending Loan Balance'
+      : ''
 
     const calculatedNewRow = calculateRowTotals([newRow], type === 'lots' ? 'lots' : undefined)[0]
 
@@ -269,15 +374,15 @@ export default function ProformaTable() {
     } else if (type === 'expense') {
       setExpenseRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
       setNewExpenseLabel('')
-    } else if (type === 'lots') {
-      setLotsRows(rows => calculateRowTotals([...rows, calculatedNewRow], 'lots'))
+    } else if (type === 'debt-financing') {
+      setDebtFinancingRows(rows => [...rows.filter(r => !r.isCalculated), calculatedNewRow])
+      setNewDebtFinancingLabel('')
     } else {
-      setRevenueDeductionRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
-      setNewRevenueDeductionLabel('')
+      setLotsRows(rows => calculateRowTotals([...rows, calculatedNewRow], 'lots'))
     }
 
     toast({
-      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'lots' ? 'Lots' : 'Revenue Deduction'} item added`,
+      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'debt-financing' ? 'Debt Financing' : 'Lots'} item added`,
       status: 'success',
       duration: 2000,
       position: 'top-right',
@@ -285,7 +390,7 @@ export default function ProformaTable() {
     })
   }
 
-  const handlePaste = (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', e: React.ClipboardEvent) => {
+  const handlePaste = (type: 'revenue' | 'expense' | 'lots' | 'debt-financing', e: React.ClipboardEvent) => {
     e.preventDefault()
     const pasteData = e.clipboardData.getData('text')
     const pastedRows = pasteData.split('\n').map((row) => row.split('\t'))
@@ -302,25 +407,25 @@ export default function ProformaTable() {
 
       setRevenueRows(updateRowsWithNewColumns)
       setExpenseRows(updateRowsWithNewColumns)
-      setRevenueDeductionRows(updateRowsWithNewColumns)
       setLotsRows(updateRowsWithNewColumns)
+      setDebtFinancingRows(updateRowsWithNewColumns)
     }
 
     const setRows = type === 'revenue' 
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
-      : type === 'lots'
-      ? setLotsRows
-      : setRevenueDeductionRows
+      : type === 'debt-financing'
+      ? setDebtFinancingRows
+      : setLotsRows
 
     const totalLabel = type === 'revenue' 
       ? 'Total Gross Revenue' 
       : type === 'expense' 
-      ? 'Total Expenses' 
-      : type === 'lots'
-      ? ''
-      : 'Net Revenue'
+      ? 'Total Expenses'
+      : type === 'debt-financing'
+      ? 'Ending Loan Balance'
+      : ''
 
     setRows((prevRows) => {
       const updatedRows = prevRows.map((row, rowIndex) => {
@@ -339,34 +444,34 @@ export default function ProformaTable() {
         }
         return row
       })
-      return type === 'lots' ? calculateRowTotals(updatedRows, 'lots') : updateRowsWithTotal(updatedRows, totalLabel)
+      return type === 'lots' || type === 'debt-financing' ? calculateRowTotals(updatedRows, type === 'lots' ? 'lots' : undefined) : updateRowsWithTotal(updatedRows, totalLabel)
     })
   }
 
-  const handleDeleteRow = (type: 'revenue' | 'expense' | 'lots' | 'revenue-deduction', rowId: string) => {
+  const handleDeleteRow = (type: 'revenue' | 'expense' | 'lots' | 'debt-financing', rowId: string) => {
     const setRows = type === 'revenue' 
       ? setRevenueRows 
       : type === 'expense' 
       ? setExpenseRows 
-      : type === 'lots'
-      ? setLotsRows
-      : setRevenueDeductionRows
+      : type === 'debt-financing'
+      ? setDebtFinancingRows
+      : setLotsRows
 
     const totalLabel = type === 'revenue' 
       ? 'Total Gross Revenue' 
       : type === 'expense' 
-      ? 'Total Expenses' 
-      : type === 'lots'
-      ? ''
-      : 'Net Revenue'
+      ? 'Total Expenses'
+      : type === 'debt-financing'
+      ? 'Ending Loan Balance'
+      : ''
 
     setRows(rows => {
       const updatedRows = rows.filter(row => !row.isCalculated && row.id !== rowId)
-      return type === 'lots' ? calculateRowTotals(updatedRows, 'lots') : updateRowsWithTotal(updatedRows, totalLabel)
+      return type === 'lots' || type === 'debt-financing' ? calculateRowTotals(updatedRows, type === 'lots' ? 'lots' : undefined) : updateRowsWithTotal(updatedRows, totalLabel)
     })
     
     toast({
-      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'lots' ? 'Lots' : 'Revenue Deduction'} item deleted`,
+      title: `${type === 'revenue' ? 'Gross Revenue' : type === 'expense' ? 'Expense' : type === 'debt-financing' ? 'Debt Financing' : 'Lots'} item deleted`,
       status: 'success',
       duration: 2000,
       position: 'top-right',
@@ -374,103 +479,83 @@ export default function ProformaTable() {
     })
   }
 
-  // Function to get current table data
-  const getTableData = (): TableData => ({
-    revenueRows,
-    expenseRows,
-    revenueDeductionRows,
-    lotsRows
-  })
-
-  // Make getTableData available globally
-  useEffect(() => {
-    ;(window as any).getProformaTableData = getTableData
-  }, [revenueRows, expenseRows, revenueDeductionRows, lotsRows])
-
   return (
     <Container maxW="container.xl" py={8}>
       <VStack spacing={8} align="stretch">
-        <Flex justify="space-between" align="center" mb={8}>
-          <Box flex="1" textAlign="center" position="relative">
-            <IconButton
-              aria-label="Toggle dark mode"
-              icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
-              onClick={toggleColorMode}
-              position="absolute"
-              right="0"
-              top="0"
-              size="lg"
-              variant="ghost"
-              color={colorMode === 'light' ? 'gray.600' : 'yellow.300'}
-              _hover={{
-                bg: colorMode === 'light' ? 'gray.100' : 'whiteAlpha.200'
-              }}
-            />
-            <Heading
-              bgGradient={`linear(to-r, ${gradientStart}, ${gradientEnd})`}
-              bgClip="text"
-              fontSize="3xl"
-            >
-              AI Proforma
-            </Heading>
-            <Text color={textColor} fontSize="lg">
-              Track and manage your revenue and expenses projections
-            </Text>
-          </Box>
+        <Flex justify="space-between" align="center">
+          <Heading size="lg" mb={4} bgGradient={`linear(to-r, ${gradientStart}, ${gradientEnd})`} bgClip="text">
+            Proforma Analysis
+          </Heading>
+          <IconButton
+            aria-label="Toggle color mode"
+            icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
+            onClick={toggleColorMode}
+          />
         </Flex>
 
-        <TableComponent
-          type="lots"
-          rows={lotsRows}
-          columns={columns}
-          newLabel=""
-          handleCellChange={handleCellChange}
-          handleAddRow={handleAddRow}
-          handlePaste={handlePaste}
-          handleDeleteRow={handleDeleteRow}
-          setNewLabel={() => {}}
-          showAddRow={false}
-          showDelete={false}
-        />
+        <Box>
+          <Text fontSize="lg" fontWeight="bold" color={textColor} mb={4}>Lots</Text>
+          <TableComponent
+            type="lots"
+            rows={lotsRows}
+            columns={columns}
+            newLabel=""
+            handleCellChange={handleCellChange}
+            handleAddRow={handleAddRow}
+            handlePaste={handlePaste}
+            handleDeleteRow={handleDeleteRow}
+            setNewLabel={() => {}}
+            showAddRow={false}
+            showDelete={false}
+          />
+        </Box>
 
-        <TableComponent
-          type="revenue"
-          rows={revenueRows}
-          columns={columns}
-          newLabel={newRevenueLabel}
-          handleCellChange={handleCellChange}
-          handleAddRow={handleAddRow}
-          handlePaste={handlePaste}
-          handleDeleteRow={handleDeleteRow}
-          setNewLabel={setNewRevenueLabel}
-          showAddRow={true}
-        />
+        <Box>
+          <Text fontSize="lg" fontWeight="bold" color={textColor} mb={4}>Gross Revenue</Text>
+          <TableComponent
+            type="revenue"
+            rows={revenueRows}
+            columns={columns}
+            newLabel={newRevenueLabel}
+            handleCellChange={handleCellChange}
+            handleAddRow={handleAddRow}
+            handlePaste={handlePaste}
+            handleDeleteRow={handleDeleteRow}
+            setNewLabel={setNewRevenueLabel}
+          />
+        </Box>
 
-        <TableComponent
-          type="revenue-deduction"
-          rows={revenueDeductionRows}
-          columns={columns}
-          newLabel={newRevenueDeductionLabel}
-          handleCellChange={handleCellChange}
-          handleAddRow={handleAddRow}
-          handlePaste={handlePaste}
-          handleDeleteRow={handleDeleteRow}
-          setNewLabel={setNewRevenueDeductionLabel}
-          showAddRow={true}
-        />
+        <Box>
+          <Text fontSize="lg" fontWeight="bold" color={textColor} mb={4}>Expenses</Text>
+          <TableComponent
+            type="expense"
+            rows={expenseRows}
+            columns={columns}
+            newLabel={newExpenseLabel}
+            handleCellChange={handleCellChange}
+            handleAddRow={handleAddRow}
+            handlePaste={handlePaste}
+            handleDeleteRow={handleDeleteRow}
+            setNewLabel={setNewExpenseLabel}
+          />
+        </Box>
 
-        <TableComponent
-          type="expense"
-          rows={expenseRows}
-          columns={columns}
-          newLabel={newExpenseLabel}
-          handleCellChange={handleCellChange}
-          handleAddRow={handleAddRow}
-          handlePaste={handlePaste}
-          handleDeleteRow={handleDeleteRow}
-          setNewLabel={setNewExpenseLabel}
-          showAddRow={true}
-        />
+        <Box>
+          <Text fontSize="lg" fontWeight="bold" color={textColor} mb={4}>Debt Financing</Text>
+          <TableComponent
+            type="debt-financing"
+            rows={debtFinancingRows}
+            columns={columns}
+            newLabel=""
+            handleCellChange={handleCellChange}
+            handleAddRow={handleAddRow}
+            handlePaste={handlePaste}
+            handleDeleteRow={handleDeleteRow}
+            setNewLabel={() => {}}
+            showAddRow={false}
+            showDelete={false}
+          />
+        </Box>
       </VStack>
     </Container>
   )

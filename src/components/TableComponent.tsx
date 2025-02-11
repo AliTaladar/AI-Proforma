@@ -73,8 +73,8 @@ const TableComponent: React.FC<TableComponentProps> = ({
         return useColorModeValue('purple.500', 'purple.300')
       case 'lots':
         return useColorModeValue('blue.500', 'blue.300')
-      case 'revenue-deduction':
-        return useColorModeValue('red.500', 'red.300')
+      case 'debt-financing':
+        return useColorModeValue('orange.500', 'orange.300')
       default:
         return useColorModeValue('gray.500', 'gray.300')
     }
@@ -88,8 +88,8 @@ const TableComponent: React.FC<TableComponentProps> = ({
         return 'Expenses'
       case 'lots':
         return 'Lots'
-      case 'revenue-deduction':
-        return 'Revenue Deductions'
+      case 'debt-financing':
+        return 'Debt Financing'
       default:
         return ''
     }
@@ -150,9 +150,11 @@ const TableComponent: React.FC<TableComponentProps> = ({
                     ? 'green' 
                     : type === 'expense' 
                     ? 'purple' 
-                    : type === 'revenue-deduction'
-                    ? 'red'
-                    : 'blue'
+                    : type === 'lots'
+                    ? 'blue'
+                    : type === 'debt-financing'
+                    ? 'orange'
+                    : 'gray'
                 }
                 onClick={() => newLabel.trim() && handleAddRow(type)}
                 variant="ghost"
@@ -311,7 +313,7 @@ const TableComponent: React.FC<TableComponentProps> = ({
                 </Td>
                 {row.values.map((value, index) => (
                   <Td key={index} minW="150px">
-                    {row.isCalculated ? (
+                    {(row.isCalculated && (type !== 'debt-financing' || row.id === 'ending-loan-balance')) ? (
                       <Text
                         textAlign="right"
                         fontWeight="medium"
