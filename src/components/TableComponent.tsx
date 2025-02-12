@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Table,
@@ -17,7 +17,11 @@ import {
   useToken,
   InputGroup,
   InputRightElement,
-  Heading
+  Heading,
+  FormLabel,
+  Textarea,
+  Button,
+  toast
 } from '@chakra-ui/react'
 import { AddIcon, ChevronRightIcon, DeleteIcon } from '@chakra-ui/icons'
 import { motion } from 'framer-motion'
@@ -38,12 +42,14 @@ interface TableComponentProps {
     columnIndex: number,
     value: string
   ) => void
-  handleAddRow: (type: TableType) => void
-  handlePaste: (type: TableType, e: React.ClipboardEvent) => void
+  handleAddRow: (type: TableType, label: string) => void
+  handlePaste: (type: TableType, e: React.ClipboardEvent, rowId: string, columnIndex: number) => void
   handleDeleteRow: (type: TableType, rowId: string) => void
   setNewLabel: (value: string) => void
   showAddRow?: boolean
   showDelete?: boolean
+  periodLabels: string[]
+  handleBulkAdd?: (type: TableType, text: string) => void
 }
 
 const TableComponent: React.FC<TableComponentProps> = ({
@@ -57,13 +63,17 @@ const TableComponent: React.FC<TableComponentProps> = ({
   handleDeleteRow,
   setNewLabel,
   showAddRow = true,
-  showDelete = true
+  showDelete = true,
+  periodLabels,
+  handleBulkAdd
 }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
   const borderColor = useColorModeValue('gray.200', 'gray.600')
   const headerBg = useColorModeValue('gray.50', 'gray.700')
   const textColor = useColorModeValue('gray.600', 'gray.400')
   const [blue500] = useToken('colors', ['blue.500'])
+  const [showPasteArea, setShowPasteArea] = useState(false)
+  const [pasteContent, setPasteContent] = useState('')
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -95,6 +105,53 @@ const TableComponent: React.FC<TableComponentProps> = ({
     }
   }
 
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const items = text.split(/[\n\r]+/)
+        .map(item => item.trim())
+        .filter(item => item.length > 0);
+
+      if (items.length === 0) {
+        toast({
+          title: 'No items found',
+          description: 'Please copy some items first',
+          status: 'warning',
+          duration: 2000,
+          position: 'top-right',
+          isClosable: true,
+        });
+        return;
+      }
+
+      // Process all items first
+      const validItems = items.filter(item => item.trim().length > 0);
+      
+      // Add all items at once
+      validItems.forEach(item => {
+        handleAddRow(type, item);
+      });
+
+      // Show success message
+      toast({
+        title: `Added ${validItems.length} items`,
+        status: 'success',
+        duration: 2000,
+        position: 'top-right',
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error reading clipboard',
+        description: 'Please try copying your items again',
+        status: 'error',
+        duration: 2000,
+        position: 'top-right',
+        isClosable: true,
+      });
+    }
+  };
+
   return (
     <MotionBox 
       mb={8}
@@ -114,53 +171,110 @@ const TableComponent: React.FC<TableComponentProps> = ({
         _hover={{ boxShadow: 'md' }}
         transition="all 0.2s"
       >
-        <Box mb={4}>
-          <Heading size="md" color={getTypeColor(type)} mb={2}>
-            {getTypeTitle(type)}
-          </Heading>
-          <Text fontSize="sm" color={textColor}>
-            {rows.length} {rows.length === 1 ? 'item' : 'items'}
-          </Text>
+        <Box p={4} bg={headerBg}>
+          <Flex justify="space-between" align="center">
+            <Heading size="sm" color={getTypeColor(type)}>
+              {getTypeTitle(type)}
+            </Heading>
+            {showAddRow && (
+              <Tooltip label="Paste multiple items from clipboard">
+                <IconButton
+                  aria-label="Paste from clipboard"
+                  icon={<AddIcon />}
+                  size="sm"
+                  variant="outline"
+                  colorScheme="blue"
+                  onClick={handlePasteFromClipboard}
+                />
+              </Tooltip>
+            )}
+          </Flex>
         </Box>
 
         {showAddRow && (
-          <InputGroup size="sm" mb={4}>
-            <Input
-              placeholder={`Add new ${type === 'revenue' ? 'gross revenue' : type.replace('-', ' ')} item...`}
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newLabel.trim()) {
-                  handleAddRow(type)
-                }
-              }}
-              borderColor={borderColor}
-              _focus={{
-                borderColor: getTypeColor(type),
-                boxShadow: `0 0 0 1px ${getTypeColor(type)}`,
-              }}
-            />
-            <InputRightElement>
-              <IconButton
-                aria-label="Add row"
-                icon={<AddIcon />}
-                size="xs"
-                colorScheme={
-                  type === 'revenue' 
-                    ? 'green' 
-                    : type === 'expense' 
-                    ? 'purple' 
-                    : type === 'lots'
-                    ? 'blue'
-                    : type === 'debt-financing'
-                    ? 'orange'
-                    : 'gray'
-                }
-                onClick={() => newLabel.trim() && handleAddRow(type)}
-                variant="ghost"
-              />
-            </InputRightElement>
-          </InputGroup>
+          <Box p={4} borderWidth={1} borderColor={borderColor} borderRadius="md" bg={bgColor}>
+            <Flex direction="column" gap={4}>
+              <Flex gap={2} alignItems="center">
+                <Input
+                  placeholder={`Add new ${type === 'revenue' ? 'gross revenue' : type.replace('-', ' ')} item...`}
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newLabel.trim()) {
+                      handleAddRow(type, newLabel)
+                    }
+                  }}
+                  borderColor={borderColor}
+                  _focus={{
+                    borderColor: getTypeColor(type),
+                    boxShadow: `0 0 0 1px ${getTypeColor(type)}`,
+                  }}
+                />
+                <IconButton
+                  aria-label="Add row"
+                  icon={<AddIcon />}
+                  size="xs"
+                  colorScheme={
+                    type === 'revenue' 
+                      ? 'green' 
+                      : type === 'expense' 
+                      ? 'purple' 
+                      : type === 'lots'
+                      ? 'blue'
+                      : type === 'debt-financing'
+                      ? 'orange'
+                      : 'gray'
+                  }
+                  onClick={() => newLabel.trim() && handleAddRow(type, newLabel)}
+                  variant="ghost"
+                />
+                {handleBulkAdd && (
+                  <IconButton
+                    aria-label="Bulk add items"
+                    icon={showPasteArea ? <ChevronRightIcon /> : <AddIcon />}
+                    onClick={() => setShowPasteArea(!showPasteArea)}
+                    colorScheme="green"
+                  />
+                )}
+              </Flex>
+              {showPasteArea && handleBulkAdd && (
+                <Box>
+                  <FormLabel fontSize="sm">Paste items from spreadsheet (one per line):</FormLabel>
+                  <Textarea
+                    value={pasteContent}
+                    onChange={(e) => setPasteContent(e.target.value)}
+                    placeholder="Paste your items here..."
+                    size="sm"
+                    rows={5}
+                  />
+                  <Flex gap={2} mt={2}>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      onClick={() => {
+                        handleBulkAdd(type, pasteContent)
+                        setPasteContent('')
+                        setShowPasteArea(false)
+                      }}
+                      isDisabled={!pasteContent.trim()}
+                    >
+                      Add Items
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setPasteContent('')
+                        setShowPasteArea(false)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </Flex>
+                </Box>
+              )}
+            </Flex>
+          </Box>
         )}
       </MotionFlex>
 
@@ -200,7 +314,6 @@ const TableComponent: React.FC<TableComponentProps> = ({
       >
         <Table
           variant="simple"
-          onPaste={(e) => handlePaste(type, e)}
           style={{ minWidth: 'max-content' }}
         >
           <Thead
@@ -235,28 +348,29 @@ const TableComponent: React.FC<TableComponentProps> = ({
               >
                 Total
               </Th>
-              <Th
+              {type !== 'lots' && <Th
                 minW="120px"
                 py={4}
                 borderBottomWidth="2px"
                 borderBottomColor={getTypeColor(type)}
               >
                 Per Unit
-              </Th>
-              {Array.from({ length: Math.max(columns, rows[0]?.values.length || 0) }, (_, i) => (
+              </Th>}
+              {periodLabels.map((label, index) => (
                 <Th
-                  key={i}
+                  key={index}
                   minW="150px"
                   py={4}
                   borderBottomWidth="2px"
                   borderBottomColor={getTypeColor(type)}
                 >
                   <Flex align="center" gap={2}>
-                    Year {i + 1}
+                    {label}
                     <ChevronRightIcon color={getTypeColor(type)} />
                   </Flex>
                 </Th>
               ))}
+              {showDelete && <Th></Th>}
             </Tr>
           </Thead>
           <Tbody>
@@ -304,44 +418,72 @@ const TableComponent: React.FC<TableComponentProps> = ({
                         maximumFractionDigits: 0 
                       })}
                 </Td>
-                <Td minW="120px" textAlign="right" fontWeight="medium" color={getTypeColor(type)}>
+                {type !== 'lots' && <Td minW="120px" textAlign="right" fontWeight="medium" color={getTypeColor(type)}>
                   {row.perUnit?.toLocaleString('en-US', { 
                     style: 'currency', 
                     currency: 'USD',
                     maximumFractionDigits: 2
                   })}
-                </Td>
-                {row.values.map((value, index) => (
-                  <Td key={index} minW="150px">
+                </Td>}
+                {row.values.map((value, colIndex) => (
+                  <Td key={colIndex} minW="150px">
                     {(row.isCalculated && (type !== 'debt-financing' || row.id === 'ending-loan-balance')) ? (
-                      <Text
-                        textAlign="right"
-                        fontWeight="medium"
-                        color={getTypeColor(type)}
-                      >
-                        {parseFloat(value).toLocaleString('en-US', { 
-                          style: 'currency', 
-                          currency: 'USD',
-                          maximumFractionDigits: 0
-                        })}
+                      <Text textAlign="right" fontWeight="medium" color={getTypeColor(type)}>
+                        {type === 'lots'
+                          ? parseFloat(value).toLocaleString('en-US', { maximumFractionDigits: 0 })
+                          : parseFloat(value).toLocaleString('en-US', {
+                              style: 'currency',
+                              currency: 'USD',
+                              maximumFractionDigits: 0
+                            })}
                       </Text>
                     ) : (
                       <Input
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*"
                         value={value}
-                        onChange={(e) =>
-                          handleCellChange(type, row.id, index, e.target.value)
-                        }
+                        onChange={(e) => handleCellChange(type, row.id, colIndex, e.target.value)}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          console.log('Paste event in cell:', row.id, colIndex);
+                          handlePaste(type, e, row.id, colIndex);
+                        }}
+                        onKeyDown={(e) => {
+                          // Allow only numbers, backspace, delete, arrow keys, and tab
+                          if (
+                            !/[\d\.]/.test(e.key) && 
+                            !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key) &&
+                            !e.ctrlKey && // Allow Ctrl+V for paste
+                            !e.metaKey // Allow Cmd+V for paste on Mac
+                          ) {
+                            e.preventDefault();
+                          }
+                        }}
                         size="sm"
-                        borderRadius="md"
                         textAlign="right"
-                        _focus={{
-                          borderColor: getTypeColor(type),
-                          boxShadow: `0 0 0 1px ${getTypeColor(type)}`,
+                        variant="filled"
+                        isReadOnly={row.isCalculated}
+                        bg={row.isCalculated ? headerBg : bgColor}
+                        _hover={{
+                          bg: row.isCalculated ? headerBg : bgColor
                         }}
                       />
                     )}
                   </Td>
                 ))}
+                {showDelete && (
+                  <Td>
+                    <IconButton
+                      aria-label="Delete row"
+                      icon={<DeleteIcon />}
+                      onClick={() => handleDeleteRow(type, row.id)}
+                      size="sm"
+                      colorScheme="red"
+                      variant="ghost"
+                    />
+                  </Td>
+                )}
               </MotionTr>
             ))}
           </Tbody>

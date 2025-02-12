@@ -34,12 +34,27 @@ export async function POST(req: Request) {
 
     console.log('Financial metrics:', financialMetrics);
 
+    // Get period labels
+    const periodLabels = tableData?.revenueRows?.[0]?.values?.map((_, i) => {
+      const date = new Date(tableData.startDate);
+      const timezoneOffset = date.getTimezoneOffset() * 60000;
+      const startDate = new Date(date.getTime() + timezoneOffset);
+      
+      if (tableData.periodType === 'yearly') {
+        startDate.setFullYear(startDate.getFullYear() + i);
+        return startDate.getFullYear().toString();
+      } else {
+        startDate.setMonth(startDate.getMonth() + i);
+        return startDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      }
+    }) || [];
+
     // Prepare revenue info if available
     let revenueInfo = '';
     if (tableData?.revenueRows) {
       const rows = tableData.revenueRows;
       revenueInfo = '\nRevenue:\n' + rows.map(row => {
-        const values = row.values.map((val, i) => `Y${i + 1}: ${formatCurrency(parseFloat(val) || 0)}`);
+        const values = row.values.map((val, i) => `${periodLabels[i]}: ${formatCurrency(parseFloat(val) || 0)}`);
         return `${row.label}:\n- Values: ${values.join(', ')}\n- Total: ${formatCurrency(row.total)}\n- Per Unit: ${formatCurrency(row.perUnit || 0)}`;
       }).join('\n\n');
     }
@@ -49,7 +64,7 @@ export async function POST(req: Request) {
     if (tableData?.expenseRows) {
       const rows = tableData.expenseRows;
       expenseInfo = '\nExpenses:\n' + rows.map(row => {
-        const values = row.values.map((val, i) => `Y${i + 1}: ${formatCurrency(parseFloat(val) || 0)}`);
+        const values = row.values.map((val, i) => `${periodLabels[i]}: ${formatCurrency(parseFloat(val) || 0)}`);
         return `${row.label}:\n- Values: ${values.join(', ')}\n- Total: ${formatCurrency(row.total)}\n- Per Unit: ${formatCurrency(row.perUnit || 0)}`;
       }).join('\n\n');
     }
@@ -59,7 +74,7 @@ export async function POST(req: Request) {
     if (tableData?.lotsRows) {
       const rows = tableData.lotsRows;
       lotsInfo = '\nLots:\n' + rows.map(row => {
-        const values = row.values.map((val, i) => `Y${i + 1}: ${val}`);
+        const values = row.values.map((val, i) => `${periodLabels[i]}: ${val}`);
         return `${row.label}:\n- Values: ${values.join(', ')}\n- Total: ${row.total}`;
       }).join('\n\n');
     }
@@ -77,7 +92,7 @@ export async function POST(req: Request) {
 
       debtFinancingInfo = `\nDebt Financing:\n` +
         beginningBalance.map((_, i) => 
-          `Year ${i + 1}:\n` +
+          `${periodLabels[i]}:\n` +
           `- Beginning Balance: ${formatCurrency(parseFloat(beginningBalance[i]) || 0)}\n` +
           `- Draws: ${formatCurrency(parseFloat(draws[i]) || 0)}\n` +
           `- Interest: ${formatCurrency(parseFloat(interest[i]) || 0)}\n` +
@@ -133,11 +148,22 @@ export async function POST(req: Request) {
     
     let aiResponse;
     try {
+      // First try to parse the content as JSON
       aiResponse = JSON.parse(content);
     } catch (e) {
       console.error('Error parsing OpenAI response:', e);
-      // If response is not JSON, return it as plain text
-      aiResponse = { text: content };
+      // If the content contains a JSON string within it, try to extract and parse it
+      const jsonMatch = content.match(/({[\s\S]*})/);
+      if (jsonMatch) {
+        try {
+          aiResponse = JSON.parse(jsonMatch[1]);
+        } catch (e2) {
+          console.error('Error parsing extracted JSON:', e2);
+          aiResponse = { text: content };
+        }
+      } else {
+        aiResponse = { text: content };
+      }
     }
     
     console.log('Final response:', aiResponse);

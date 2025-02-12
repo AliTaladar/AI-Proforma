@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { 
   Box, 
   useToast, 
@@ -11,7 +11,17 @@ import {
   useColorMode,
   IconButton,
   Flex,
-  useColorModeValue
+  useColorModeValue,
+  FormControl,
+  FormLabel,
+  Select,
+  Input,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  HStack
 } from '@chakra-ui/react'
 import { MoonIcon, SunIcon } from '@chakra-ui/icons'
 import TableComponent from './TableComponent'
@@ -31,6 +41,8 @@ export interface TableData {
   expenseRows: TableRow[];
   lotsRows: TableRow[];
   debtFinancingRows: TableRow[];
+  periodType: 'monthly' | 'yearly';
+  startDate: Date;
 }
 
 export default function ProformaTable() {
@@ -84,10 +96,13 @@ export default function ProformaTable() {
       total: 0
     }
   ])
+  const [periodType, setPeriodType] = useState<'monthly' | 'yearly'>('yearly')
+  const [startDate, setStartDate] = useState<Date>(new Date())
   const [newRevenueLabel, setNewRevenueLabel] = useState('')
   const [newExpenseLabel, setNewExpenseLabel] = useState('')
   const [newDebtFinancingLabel, setNewDebtFinancingLabel] = useState('')
-  const [columns, setColumns] = useState(5)
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false)
+  const [pasteType, setPasteType] = useState<'revenue' | 'expense' | 'lots' | 'debt-financing' | null>(null)
   const toast = useToast()
   const { colorMode, toggleColorMode } = useColorMode()
   const textColor = useColorModeValue('gray.600', 'gray.300')
@@ -117,7 +132,7 @@ export default function ProformaTable() {
   const calculateTotalRow = (rows: TableRow[], label: string): TableRow => {
     const totalLotsSold = getTotalLotsSold()
     
-    const totalValues = Array(columns).fill('0').map((_, colIndex) => {
+    const totalValues = Array(5).fill('0').map((_, colIndex) => {
       const sum = rows
         .filter(row => !row.isCalculated)
         .reduce((total, row) => total + (parseFloat(row.values[colIndex]) || 0), 0)
@@ -142,6 +157,37 @@ export default function ProformaTable() {
     return [...regularRows, totalRow]
   }
 
+  const generatePeriodLabels = useCallback(() => {
+    const labels = []
+    const timezoneOffset = startDate.getTimezoneOffset() * 60000;
+    const date = new Date(startDate.getTime() + timezoneOffset);
+    
+    for (let i = 0; i < 5; i++) {
+      if (periodType === 'yearly') {
+        labels.push(date.getFullYear().toString())
+        date.setFullYear(date.getFullYear() + 1)
+      } else {
+        labels.push(date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' }))
+        date.setMonth(date.getMonth() + 1)
+      }
+    }
+    return labels
+  }, [startDate, periodType])
+
+  useEffect(() => {
+    const updateRowsWithNewPeriods = (rows: TableRow[]) => {
+      return rows.map(row => ({
+        ...row,
+        values: Array(5).fill('0')
+      }))
+    }
+
+    setRevenueRows(prev => updateRowsWithNewPeriods(prev))
+    setExpenseRows(prev => updateRowsWithNewPeriods(prev))
+    setLotsRows(prev => updateRowsWithNewPeriods(prev))
+    setDebtFinancingRows(prev => updateRowsWithNewPeriods(prev))
+  }, [periodType, startDate])
+
   useEffect(() => {
     setRevenueRows(rows => {
       const updatedRows = rows.map(row => {
@@ -156,7 +202,7 @@ export default function ProformaTable() {
       })
       return updateRowsWithTotal(updatedRows, 'Total Gross Revenue')
     })
-  }, [columns, lotsRows])
+  }, [lotsRows])
 
   useEffect(() => {
     setExpenseRows(rows => {
@@ -172,15 +218,15 @@ export default function ProformaTable() {
       })
       return updateRowsWithTotal(updatedRows, 'Total Expenses')
     })
-  }, [columns, lotsRows])
+  }, [lotsRows])
 
   useEffect(() => {
     setRevenueRows(rows => updateRowsWithTotal(rows, 'Total Gross Revenue'))
-  }, [columns])
+  }, [])
 
   useEffect(() => {
     setExpenseRows(rows => updateRowsWithTotal(rows, 'Total Expenses'))
-  }, [columns])
+  }, [])
 
   useEffect(() => {
     const calculateEndingLoanBalance = () => {
@@ -224,8 +270,35 @@ export default function ProformaTable() {
   }, [debtFinancingRows])
 
   useEffect(() => {
-    setRevenueRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Gross Revenue'))
-    setExpenseRows(rows => updateRowsWithTotal(rows.filter(row => !row.isCalculated), 'Total Expenses'))
+    setRevenueRows(rows => {
+      const updatedRows = rows.map(row => {
+        if (row.isCalculated) return row;
+        const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+        const totalLotsSold = getTotalLotsSold()
+        return {
+          ...row,
+          total,
+          perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
+        }
+      })
+      return updateRowsWithTotal(updatedRows.filter(r => !r.isCalculated), 'Total Gross Revenue')
+    })
+  }, [lotsRows])
+
+  useEffect(() => {
+    setExpenseRows(rows => {
+      const updatedRows = rows.map(row => {
+        if (row.isCalculated) return row;
+        const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+        const totalLotsSold = getTotalLotsSold()
+        return {
+          ...row,
+          total,
+          perUnit: totalLotsSold > 0 ? total / totalLotsSold : 0
+        }
+      })
+      return updateRowsWithTotal(updatedRows.filter(r => !r.isCalculated), 'Total Expenses')
+    })
   }, [lotsRows])
 
   useEffect(() => {
@@ -234,14 +307,16 @@ export default function ProformaTable() {
       revenueRows,
       expenseRows,
       lotsRows,
-      debtFinancingRows
+      debtFinancingRows,
+      periodType,
+      startDate
     });
 
     // Cleanup
     return () => {
       delete (window as any).getProformaTableData;
     };
-  }, [revenueRows, expenseRows, lotsRows, debtFinancingRows]);
+  }, [revenueRows, expenseRows, lotsRows, debtFinancingRows, periodType, startDate]);
 
   const handleCellChange = (
     type: 'revenue' | 'expense' | 'lots' | 'debt-financing',
@@ -353,7 +428,7 @@ export default function ProformaTable() {
     const newRow: TableRow = {
       id: uuidv4(),
       label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : type === 'debt-financing' ? `Debt Financing ${debtFinancingRows.length + 1}` : label,
-      values: Array(columns).fill('0'),
+      values: Array(5).fill('0'),
       total: 0,
       perUnit: type === 'lots' ? undefined : 0
     }
@@ -390,25 +465,41 @@ export default function ProformaTable() {
     })
   }
 
-  const handlePaste = (type: 'revenue' | 'expense' | 'lots' | 'debt-financing', e: React.ClipboardEvent) => {
+  const handlePaste = (
+    type: 'revenue' | 'expense' | 'lots' | 'debt-financing', 
+    e: React.ClipboardEvent,
+    rowId: string,
+    columnIndex: number
+  ) => {
     e.preventDefault()
-    const pasteData = e.clipboardData.getData('text')
-    const pastedRows = pasteData.split('\n').map((row) => row.split('\t'))
-
-    const maxPastedColumns = Math.max(...pastedRows.map((row) => row.length))
-
-    if (maxPastedColumns > columns) {
-      setColumns(maxPastedColumns)
-      const updateRowsWithNewColumns = (rows: TableRow[]) => 
-        rows.map((row) => ({
-          ...row,
-          values: [...row.values, ...Array(maxPastedColumns - row.values.length).fill('0')],
-        }))
-
-      setRevenueRows(updateRowsWithNewColumns)
-      setExpenseRows(updateRowsWithNewColumns)
-      setLotsRows(updateRowsWithNewColumns)
-      setDebtFinancingRows(updateRowsWithNewColumns)
+    console.log('Paste event triggered for row:', rowId, 'column:', columnIndex)
+    
+    const pasteData = e.clipboardData.getData('text/plain')
+    console.log('Paste data:', pasteData)
+    
+    if (!pasteData) {
+      console.log('No paste data available')
+      return
+    }
+    
+    // Split the pasted data into rows and columns
+    const rows = pasteData
+      .split(/[\n\r]+/)
+      .map(row => {
+        // Split row into cells and trim each cell
+        const cells = row.split(/\t/).map(cell => cell.trim());
+        // If all cells in a row are empty, fill them with '0'
+        if (cells.every(cell => cell === '')) {
+          return Array(5).fill('0');
+        }
+        return cells;
+      });
+    
+    console.log('Parsed rows:', rows)
+    
+    if (rows.length === 0) {
+      console.log('No rows to paste')
+      return
     }
 
     const setRows = type === 'revenue' 
@@ -427,24 +518,74 @@ export default function ProformaTable() {
       ? 'Ending Loan Balance'
       : ''
 
-    setRows((prevRows) => {
-      const updatedRows = prevRows.map((row, rowIndex) => {
-        if (rowIndex < pastedRows.length) {
-          const newValues = [...row.values]
-          pastedRows[rowIndex].forEach((value, colIndex) => {
-            if (colIndex < maxPastedColumns) {
-              const numericValue = value.trim() === '' ? '0' : value.replace(/[^\d.-]/g, '')
-              newValues[colIndex] = isNaN(parseFloat(numericValue)) ? '0' : numericValue
-            }
-          })
-          return {
-            ...row,
-            values: newValues,
-          }
+    setRows(prevRows => {
+      let updatedRows = [...prevRows]
+      const startRowIndex = updatedRows.findIndex(row => row.id === rowId)
+      if (startRowIndex === -1) {
+        console.log('Row not found:', rowId)
+        return prevRows
+      }
+
+      console.log('Updating rows starting at index:', startRowIndex)
+
+      // Update each cell with pasted data
+      rows.forEach((rowData, rowOffset) => {
+        const targetRowIndex = startRowIndex + rowOffset
+        if (targetRowIndex >= updatedRows.length) {
+          console.log('Row index out of bounds:', targetRowIndex)
+          return
         }
-        return row
+
+        rowData.forEach((cellValue, colOffset) => {
+          const targetColIndex = columnIndex + colOffset
+          if (targetColIndex >= 5) {
+            console.log('Column index out of bounds:', targetColIndex)
+            return
+          }
+
+          // Convert the cell value to a number or 0 if invalid
+          const numericValue = cellValue === '' ? '0' : cellValue.replace(/[^\d.-]/g, '')
+          const value = isNaN(parseFloat(numericValue)) ? '0' : numericValue
+
+          console.log('Setting value at', targetRowIndex, targetColIndex, ':', value, 'original:', cellValue)
+
+          // Update the cell value
+          updatedRows[targetRowIndex] = {
+            ...updatedRows[targetRowIndex],
+            values: updatedRows[targetRowIndex].values.map((v, i) => 
+              i === targetColIndex ? value : v
+            )
+          }
+        })
       })
-      return type === 'lots' || type === 'debt-financing' ? calculateRowTotals(updatedRows, type === 'lots' ? 'lots' : undefined) : updateRowsWithTotal(updatedRows, totalLabel)
+
+      // Recalculate totals and per-unit values
+      updatedRows = updatedRows.map(row => {
+        if (row.isCalculated) return row
+        const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+        const totalLotsSold = getTotalLotsSold()
+        return {
+          ...row,
+          total,
+          perUnit: type !== 'lots' && totalLotsSold > 0 ? total / totalLotsSold : undefined
+        }
+      })
+
+      if (type === 'lots') {
+        return calculateRowTotals(updatedRows, 'lots')
+      } else if (type === 'debt-financing') {
+        return updatedRows
+      } else {
+        return updateRowsWithTotal(updatedRows.filter(r => !r.isCalculated), totalLabel)
+      }
+    })
+
+    toast({
+      title: 'Data pasted successfully',
+      status: 'success',
+      duration: 2000,
+      position: 'top-right',
+      isClosable: true,
     })
   }
 
@@ -479,18 +620,89 @@ export default function ProformaTable() {
     })
   }
 
+  const handleBulkAdd = (type: 'revenue' | 'expense' | 'lots' | 'debt-financing', text: string) => {
+    const items = text.split(/[\n\r]+/).map(item => item.trim()).filter(item => item.length > 0)
+    
+    items.forEach(label => {
+      const newRow: TableRow = {
+        id: uuidv4(),
+        label: label.trim(),
+        values: Array(5).fill('0'),
+        total: 0,
+        perUnit: type === 'lots' ? undefined : 0
+      }
+
+      const totalLabel = type === 'revenue' 
+        ? 'Total Gross Revenue' 
+        : type === 'expense' 
+        ? 'Total Expenses'
+        : type === 'debt-financing'
+        ? 'Ending Loan Balance'
+        : ''
+
+      const calculatedNewRow = calculateRowTotals([newRow], type === 'lots' ? 'lots' : undefined)[0]
+
+      if (type === 'revenue') {
+        setRevenueRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
+      } else if (type === 'expense') {
+        setExpenseRows(rows => updateRowsWithTotal([...rows.filter(r => !r.isCalculated), calculatedNewRow], totalLabel))
+      } else if (type === 'debt-financing') {
+        setDebtFinancingRows(rows => [...rows.filter(r => !r.isCalculated), calculatedNewRow])
+      } else {
+        setLotsRows(rows => calculateRowTotals([...rows, calculatedNewRow], 'lots'))
+      }
+    })
+
+    if (items.length > 0) {
+      toast({
+        title: `Added ${items.length} new ${type === 'revenue' ? 'revenue' : type === 'expense' ? 'expense' : type === 'debt-financing' ? 'debt financing' : 'lots'} items`,
+        status: 'success',
+        duration: 2000,
+        position: 'top-right',
+        isClosable: true,
+      })
+    }
+  }
+
   return (
     <Container maxW="container.xl" py={8}>
       <VStack spacing={8} align="stretch">
-        <Flex justify="space-between" align="center">
-          <Heading size="lg" mb={4} bgGradient={`linear(to-r, ${gradientStart}, ${gradientEnd})`} bgClip="text">
+        <Flex justifyContent="space-between" alignItems="center">
+          <Heading size="lg" bgGradient={`linear(to-r, ${gradientStart}, ${gradientEnd})`} bgClip="text">
             Proforma Analysis
           </Heading>
-          <IconButton
-            aria-label="Toggle color mode"
-            icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
-            onClick={toggleColorMode}
-          />
+          <HStack spacing={4}>
+            <FormControl w="200px">
+              <FormLabel>Period Type</FormLabel>
+              <Select
+                value={periodType}
+                onChange={(e) => setPeriodType(e.target.value as 'monthly' | 'yearly')}
+              >
+                <option value="yearly">Yearly</option>
+                <option value="monthly">Monthly</option>
+              </Select>
+            </FormControl>
+            
+            <FormControl w="200px">
+              <FormLabel>Start Date</FormLabel>
+              <Input
+                type="date"
+                value={startDate.toISOString().split('T')[0]}
+                onChange={(e) => {
+                  const inputDate = new Date(e.target.value);
+                  const timezoneOffset = inputDate.getTimezoneOffset() * 60000;
+                  const adjustedDate = new Date(inputDate.getTime() + timezoneOffset);
+                  setStartDate(adjustedDate);
+                }}
+              />
+            </FormControl>
+
+            <IconButton
+              aria-label="Toggle color mode"
+              icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
+              onClick={toggleColorMode}
+            />
+          </HStack>
         </Flex>
 
         <Box>
@@ -498,7 +710,7 @@ export default function ProformaTable() {
           <TableComponent
             type="lots"
             rows={lotsRows}
-            columns={columns}
+            columns={5}
             newLabel=""
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
@@ -507,6 +719,7 @@ export default function ProformaTable() {
             setNewLabel={() => {}}
             showAddRow={false}
             showDelete={false}
+            periodLabels={generatePeriodLabels()}
           />
         </Box>
 
@@ -515,13 +728,15 @@ export default function ProformaTable() {
           <TableComponent
             type="revenue"
             rows={revenueRows}
-            columns={columns}
+            columns={5}
             newLabel={newRevenueLabel}
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
             handlePaste={handlePaste}
             handleDeleteRow={handleDeleteRow}
             setNewLabel={setNewRevenueLabel}
+            periodLabels={generatePeriodLabels()}
+            handleBulkAdd={handleBulkAdd}
           />
         </Box>
 
@@ -530,13 +745,15 @@ export default function ProformaTable() {
           <TableComponent
             type="expense"
             rows={expenseRows}
-            columns={columns}
+            columns={5}
             newLabel={newExpenseLabel}
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
             handlePaste={handlePaste}
             handleDeleteRow={handleDeleteRow}
             setNewLabel={setNewExpenseLabel}
+            periodLabels={generatePeriodLabels()}
+            handleBulkAdd={handleBulkAdd}
           />
         </Box>
 
@@ -545,7 +762,7 @@ export default function ProformaTable() {
           <TableComponent
             type="debt-financing"
             rows={debtFinancingRows}
-            columns={columns}
+            columns={5}
             newLabel=""
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
@@ -554,6 +771,7 @@ export default function ProformaTable() {
             setNewLabel={() => {}}
             showAddRow={false}
             showDelete={false}
+            periodLabels={generatePeriodLabels()}
           />
         </Box>
       </VStack>
