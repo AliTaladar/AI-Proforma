@@ -324,14 +324,14 @@ const TableComponent: React.FC<TableComponentProps> = ({
             boxShadow="sm"
           >
             <Tr>
-              <Th
-                w="60px"
-                py={4}
-                borderBottomWidth="2px"
-                borderBottomColor={getTypeColor(type)}
-              >
-                
-              </Th>
+              {showDelete && (
+                <Th
+                  w="60px"
+                  py={4}
+                  borderBottomWidth="2px"
+                  borderBottomColor={getTypeColor(type)}
+                />
+              )}
               <Th
                 minW="200px"
                 py={4}
@@ -370,7 +370,6 @@ const TableComponent: React.FC<TableComponentProps> = ({
                   </Flex>
                 </Th>
               ))}
-              {showDelete && <Th></Th>}
             </Tr>
           </Thead>
           <Tbody>
@@ -382,8 +381,8 @@ const TableComponent: React.FC<TableComponentProps> = ({
                 transition={{ duration: 0.3, delay: rowIndex * 0.05 }}
                 _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
               >
-                <Td w="60px">
-                  {showDelete !== false && !row.isCalculated && (
+                {showDelete && !row.isCalculated && (
+                  <Td w="60px">
                     <Tooltip label="Delete row" placement="right">
                       <IconButton
                         aria-label="Delete row"
@@ -404,8 +403,9 @@ const TableComponent: React.FC<TableComponentProps> = ({
                         }}
                       />
                     </Tooltip>
-                  )}
-                </Td>
+                  </Td>
+                )}
+                {showDelete && row.isCalculated && <Td w="60px" />}
                 <Td minW="200px" fontWeight="medium">
                   {row.label}
                 </Td>
@@ -472,18 +472,6 @@ const TableComponent: React.FC<TableComponentProps> = ({
                     )}
                   </Td>
                 ))}
-                {showDelete && (
-                  <Td>
-                    <IconButton
-                      aria-label="Delete row"
-                      icon={<DeleteIcon />}
-                      onClick={() => handleDeleteRow(type, row.id)}
-                      size="sm"
-                      colorScheme="red"
-                      variant="ghost"
-                    />
-                  </Td>
-                )}
               </MotionTr>
             ))}
           </Tbody>

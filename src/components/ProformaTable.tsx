@@ -43,6 +43,7 @@ export interface TableData {
   debtFinancingRows: TableRow[];
   periodType: 'monthly' | 'yearly';
   startDate: Date;
+  endDate: Date;
 }
 
 export default function ProformaTable() {
@@ -98,6 +99,11 @@ export default function ProformaTable() {
   ])
   const [periodType, setPeriodType] = useState<'monthly' | 'yearly'>('yearly')
   const [startDate, setStartDate] = useState<Date>(new Date())
+  const [endDate, setEndDate] = useState<Date>(() => {
+    const date = new Date()
+    date.setFullYear(date.getFullYear() + 5) // Default to 5 years from now
+    return date
+  })
   const [newRevenueLabel, setNewRevenueLabel] = useState('')
   const [newExpenseLabel, setNewExpenseLabel] = useState('')
   const [newDebtFinancingLabel, setNewDebtFinancingLabel] = useState('')
@@ -108,6 +114,7 @@ export default function ProformaTable() {
   const textColor = useColorModeValue('gray.600', 'gray.300')
   const gradientStart = useColorModeValue('blue.400', 'blue.200')
   const gradientEnd = useColorModeValue('purple.500', 'purple.300')
+  const [periodLabels, setPeriodLabels] = useState<string[]>([])
 
   const getTotalLotsSold = () => {
     const lotsSoldRow = lotsRows.find(row => row.id === 'lots-sold')
@@ -116,23 +123,73 @@ export default function ProformaTable() {
   }
 
   const calculateRowTotals = (rows: TableRow[], type?: 'lots'): TableRow[] => {
-    const totalLotsSold = getTotalLotsSold()
-    return rows.map(row => {
-      const numericValues = row.values.map(v => parseFloat(v) || 0)
-      const total = numericValues.reduce((sum, val) => sum + val, 0)
-      
+    // Calculate total lots sold
+    const lotsSoldRow = rows.find(row => row.id === 'lots-sold')
+    const totalLotsSold = lotsSoldRow
+      ? lotsSoldRow.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
+      : 0
+
+    // Calculate total values for each row
+    const updatedRows = rows.map(row => {
+      if (row.isCalculated) return row
+      const total = row.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
       return {
         ...row,
         total,
-        perUnit: type === 'lots' ? undefined : totalLotsSold > 0 ? total / totalLotsSold : 0
+        perUnit: type !== 'lots' && totalLotsSold > 0 ? total / totalLotsSold : undefined
       }
     })
+
+    if (type === 'lots') {
+      // For lots table, add a "Total Lots Sold" row
+      const totalValues = Array(periodLabels.length).fill(0).map((_, colIndex) => {
+        const sum = updatedRows
+          .filter(row => !row.isCalculated)
+          .reduce((total, row) => total + (parseFloat(row.values[colIndex]) || 0), 0)
+        return sum.toString()
+      })
+
+      const totalRow: TableRow = {
+        id: 'lots-sold',
+        label: 'Total Lots Sold',
+        values: totalValues,
+        total: totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0),
+        isCalculated: true
+      }
+
+      return [...updatedRows.filter(row => row.id !== 'lots-sold'), totalRow]
+    }
+
+    return updatedRows
+  }
+
+  const updateRowsWithTotal = (regularRows: TableRow[], totalLabel: string) => {
+    // Calculate total values for each period
+    const totalValues = Array(periodLabels.length).fill(0).map((_, colIndex) => {
+      const sum = regularRows.reduce((acc, row) => acc + (parseFloat(row.values[colIndex]) || 0), 0);
+      return sum.toString();
+    });
+
+    // Calculate grand total
+    const grandTotal = totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+
+    // Create total row
+    const totalRow: TableRow = {
+      id: totalLabel.toLowerCase().replace(/\s+/g, '-'),
+      label: totalLabel,
+      values: totalValues,
+      total: grandTotal,
+      perUnit: getTotalLotsSold() > 0 ? grandTotal / getTotalLotsSold() : 0,
+      isCalculated: true
+    };
+
+    return [...regularRows, totalRow];
   }
 
   const calculateTotalRow = (rows: TableRow[], label: string): TableRow => {
     const totalLotsSold = getTotalLotsSold()
     
-    const totalValues = Array(5).fill('0').map((_, colIndex) => {
+    const totalValues = Array(periodLabels.length).fill('0').map((_, colIndex) => {
       const sum = rows
         .filter(row => !row.isCalculated)
         .reduce((total, row) => total + (parseFloat(row.values[colIndex]) || 0), 0)
@@ -151,42 +208,54 @@ export default function ProformaTable() {
     }
   }
 
-  const updateRowsWithTotal = (rows: TableRow[], label: string): TableRow[] => {
-    const regularRows = rows.filter(row => !row.isCalculated)
-    const totalRow = calculateTotalRow(regularRows, label)
-    return [...regularRows, totalRow]
-  }
-
-  const generatePeriodLabels = useCallback(() => {
-    const labels = []
-    const timezoneOffset = startDate.getTimezoneOffset() * 60000;
-    const date = new Date(startDate.getTime() + timezoneOffset);
-    
-    for (let i = 0; i < 5; i++) {
-      if (periodType === 'yearly') {
-        labels.push(date.getFullYear().toString())
-        date.setFullYear(date.getFullYear() + 1)
-      } else {
-        labels.push(date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' }))
-        date.setMonth(date.getMonth() + 1)
-      }
-    }
-    return labels
-  }, [startDate, periodType])
-
   useEffect(() => {
-    const updateRowsWithNewPeriods = (rows: TableRow[]) => {
+    const timezoneOffset = startDate.getTimezoneOffset() * 60000;
+    const start = new Date(startDate.getTime() + timezoneOffset);
+    const end = new Date(endDate.getTime() + timezoneOffset);
+
+    // Calculate the number of periods between start and end dates
+    const getNumberOfPeriods = () => {
+      if (periodType === 'yearly') {
+        return end.getFullYear() - start.getFullYear() + 1;
+      } else {
+        return (
+          (end.getFullYear() - start.getFullYear()) * 12 +
+          (end.getMonth() - start.getMonth()) + 1
+        );
+      }
+    };
+
+    const numberOfPeriods = Math.max(1, Math.min(getNumberOfPeriods(), 60)); // Cap at 60 periods
+
+    const labels = Array.from({ length: numberOfPeriods }, (_, i) => {
+      const currentDate = new Date(start);
+      if (periodType === 'yearly') {
+        currentDate.setFullYear(start.getFullYear() + i);
+        return currentDate.getFullYear().toString();
+      } else {
+        currentDate.setMonth(start.getMonth() + i);
+        return currentDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      }
+    });
+
+    setPeriodLabels(labels);
+
+    // Initialize or adjust row values if needed
+    const adjustRowValues = (rows: TableRow[]) => {
       return rows.map(row => ({
         ...row,
-        values: Array(5).fill('0')
-      }))
-    }
+        values: row.values.length === labels.length 
+          ? row.values 
+          : Array(labels.length).fill('0')
+      }));
+    };
 
-    setRevenueRows(prev => updateRowsWithNewPeriods(prev))
-    setExpenseRows(prev => updateRowsWithNewPeriods(prev))
-    setLotsRows(prev => updateRowsWithNewPeriods(prev))
-    setDebtFinancingRows(prev => updateRowsWithNewPeriods(prev))
-  }, [periodType, startDate])
+    setRevenueRows(prev => adjustRowValues(prev));
+    setExpenseRows(prev => adjustRowValues(prev));
+    setLotsRows(prev => adjustRowValues(prev));
+    setDebtFinancingRows(prev => adjustRowValues(prev));
+
+  }, [startDate, endDate, periodType])
 
   useEffect(() => {
     setRevenueRows(rows => {
@@ -309,14 +378,15 @@ export default function ProformaTable() {
       lotsRows,
       debtFinancingRows,
       periodType,
-      startDate
+      startDate,
+      endDate
     });
 
     // Cleanup
     return () => {
       delete (window as any).getProformaTableData;
     };
-  }, [revenueRows, expenseRows, lotsRows, debtFinancingRows, periodType, startDate]);
+  }, [revenueRows, expenseRows, lotsRows, debtFinancingRows, periodType, startDate, endDate]);
 
   const handleCellChange = (
     type: 'revenue' | 'expense' | 'lots' | 'debt-financing',
@@ -428,7 +498,7 @@ export default function ProformaTable() {
     const newRow: TableRow = {
       id: uuidv4(),
       label: type === 'lots' ? `Lots ${lotsRows.length + 1}` : type === 'debt-financing' ? `Debt Financing ${debtFinancingRows.length + 1}` : label,
-      values: Array(5).fill('0'),
+      values: Array(periodLabels.length).fill('0'),
       total: 0,
       perUnit: type === 'lots' ? undefined : 0
     }
@@ -490,7 +560,7 @@ export default function ProformaTable() {
         const cells = row.split(/\t/).map(cell => cell.trim());
         // If all cells in a row are empty, fill them with '0'
         if (cells.every(cell => cell === '')) {
-          return Array(5).fill('0');
+          return Array(periodLabels.length).fill('0');
         }
         return cells;
       });
@@ -538,7 +608,7 @@ export default function ProformaTable() {
 
         rowData.forEach((cellValue, colOffset) => {
           const targetColIndex = columnIndex + colOffset
-          if (targetColIndex >= 5) {
+          if (targetColIndex >= periodLabels.length) {
             console.log('Column index out of bounds:', targetColIndex)
             return
           }
@@ -627,7 +697,7 @@ export default function ProformaTable() {
       const newRow: TableRow = {
         id: uuidv4(),
         label: label.trim(),
-        values: Array(5).fill('0'),
+        values: Array(periodLabels.length).fill('0'),
         total: 0,
         perUnit: type === 'lots' ? undefined : 0
       }
@@ -696,6 +766,20 @@ export default function ProformaTable() {
                 }}
               />
             </FormControl>
+            
+            <FormControl w="200px">
+              <FormLabel>End Date</FormLabel>
+              <Input
+                type="date"
+                value={endDate.toISOString().split('T')[0]}
+                onChange={(e) => {
+                  const inputDate = new Date(e.target.value);
+                  const timezoneOffset = inputDate.getTimezoneOffset() * 60000;
+                  const adjustedDate = new Date(inputDate.getTime() + timezoneOffset);
+                  setEndDate(adjustedDate);
+                }}
+              />
+            </FormControl>
 
             <IconButton
               aria-label="Toggle color mode"
@@ -710,7 +794,7 @@ export default function ProformaTable() {
           <TableComponent
             type="lots"
             rows={lotsRows}
-            columns={5}
+            columns={periodLabels.length}
             newLabel=""
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
@@ -719,7 +803,7 @@ export default function ProformaTable() {
             setNewLabel={() => {}}
             showAddRow={false}
             showDelete={false}
-            periodLabels={generatePeriodLabels()}
+            periodLabels={periodLabels}
           />
         </Box>
 
@@ -728,14 +812,14 @@ export default function ProformaTable() {
           <TableComponent
             type="revenue"
             rows={revenueRows}
-            columns={5}
+            columns={periodLabels.length}
             newLabel={newRevenueLabel}
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
             handlePaste={handlePaste}
             handleDeleteRow={handleDeleteRow}
             setNewLabel={setNewRevenueLabel}
-            periodLabels={generatePeriodLabels()}
+            periodLabels={periodLabels}
             handleBulkAdd={handleBulkAdd}
           />
         </Box>
@@ -745,14 +829,14 @@ export default function ProformaTable() {
           <TableComponent
             type="expense"
             rows={expenseRows}
-            columns={5}
+            columns={periodLabels.length}
             newLabel={newExpenseLabel}
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
             handlePaste={handlePaste}
             handleDeleteRow={handleDeleteRow}
             setNewLabel={setNewExpenseLabel}
-            periodLabels={generatePeriodLabels()}
+            periodLabels={periodLabels}
             handleBulkAdd={handleBulkAdd}
           />
         </Box>
@@ -762,7 +846,7 @@ export default function ProformaTable() {
           <TableComponent
             type="debt-financing"
             rows={debtFinancingRows}
-            columns={5}
+            columns={periodLabels.length}
             newLabel=""
             handleCellChange={handleCellChange}
             handleAddRow={handleAddRow}
@@ -771,7 +855,7 @@ export default function ProformaTable() {
             setNewLabel={() => {}}
             showAddRow={false}
             showDelete={false}
-            periodLabels={generatePeriodLabels()}
+            periodLabels={periodLabels}
           />
         </Box>
       </VStack>
