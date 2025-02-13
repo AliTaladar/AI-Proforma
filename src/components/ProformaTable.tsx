@@ -21,11 +21,18 @@ import {
   NumberInputStepper,
   NumberIncrementStepper,
   NumberDecrementStepper,
-  HStack
+  HStack,
+  Table,
+  Thead,
+  Tr,
+  Th,
+  Tbody,
+  Td
 } from '@chakra-ui/react'
 import { MoonIcon, SunIcon } from '@chakra-ui/icons'
 import TableComponent from './TableComponent'
 import { v4 as uuidv4 } from 'uuid'
+import { calculateProfitMargin, calculatePeriodProfitMargins, FinancialMetric } from '../utils/financialCalculations'
 
 interface TableRow {
   id: string
@@ -122,13 +129,20 @@ export default function ProformaTable() {
     return lotsSoldRow.total
   }
 
-  const calculateRowTotals = (rows: TableRow[], type?: 'lots'): TableRow[] => {
-    // Calculate total lots sold
-    const lotsSoldRow = rows.find(row => row.id === 'lots-sold')
-    const totalLotsSold = lotsSoldRow
-      ? lotsSoldRow.values.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-      : 0
+  const calculateProfitMargin = (revenue: number, expenses: number) => {
+    if (revenue === 0) return { value: 0, formatted: '0%' };
+    const margin = ((revenue - expenses) / revenue) * 100;
+    return {
+      value: margin,
+      formatted: `${margin.toFixed(1)}%`
+    };
+  }
 
+  const calculatePeriodProfitMargins = (revenues: number[], expenses: number[]) => {
+    return revenues.map((revenue, i) => calculateProfitMargin(revenue, expenses[i]));
+  }
+
+  const calculateRowTotals = (rows: TableRow[], type?: 'lots'): TableRow[] => {
     // Calculate total values for each row
     const updatedRows = rows.map(row => {
       if (row.isCalculated) return row
@@ -136,28 +150,13 @@ export default function ProformaTable() {
       return {
         ...row,
         total,
-        perUnit: type !== 'lots' && totalLotsSold > 0 ? total / totalLotsSold : undefined
+        perUnit: type !== 'lots' && getTotalLotsSold() > 0 ? total / getTotalLotsSold() : undefined
       }
     })
 
     if (type === 'lots') {
-      // For lots table, add a "Total Lots Sold" row
-      const totalValues = Array(periodLabels.length).fill(0).map((_, colIndex) => {
-        const sum = updatedRows
-          .filter(row => !row.isCalculated)
-          .reduce((total, row) => total + (parseFloat(row.values[colIndex]) || 0), 0)
-        return sum.toString()
-      })
-
-      const totalRow: TableRow = {
-        id: 'lots-sold',
-        label: 'Total Lots Sold',
-        values: totalValues,
-        total: totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0),
-        isCalculated: true
-      }
-
-      return [...updatedRows.filter(row => row.id !== 'lots-sold'), totalRow]
+      // Remove the "Total Lots Sold" calculation as it's now an input row
+      return updatedRows;
     }
 
     return updatedRows
@@ -184,28 +183,6 @@ export default function ProformaTable() {
     };
 
     return [...regularRows, totalRow];
-  }
-
-  const calculateTotalRow = (rows: TableRow[], label: string): TableRow => {
-    const totalLotsSold = getTotalLotsSold()
-    
-    const totalValues = Array(periodLabels.length).fill('0').map((_, colIndex) => {
-      const sum = rows
-        .filter(row => !row.isCalculated)
-        .reduce((total, row) => total + (parseFloat(row.values[colIndex]) || 0), 0)
-      return sum.toString()
-    })
-
-    const rowTotal = totalValues.reduce((sum, val) => sum + (parseFloat(val) || 0), 0)
-
-    return {
-      id: `total-${label.toLowerCase().replace(' ', '-')}`,
-      label,
-      values: totalValues,
-      total: rowTotal,
-      perUnit: totalLotsSold > 0 ? rowTotal / totalLotsSold : 0,
-      isCalculated: true
-    }
   }
 
   useEffect(() => {

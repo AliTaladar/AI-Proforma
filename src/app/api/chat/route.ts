@@ -16,12 +16,22 @@ export async function POST(req: Request) {
     // Extract financial metrics if table data is available
     let financialMetrics = '';
     if (tableData) {
-      console.log('Processing table data:', tableData);
+      console.log('Processing table data:', JSON.stringify(tableData, null, 2));
       try {
         const { values: cashFlows, years } = extractCashFlows(tableData);
+        console.log('Extracted cash flows:', { cashFlows, years });
+        
         const irr = calculateIRR(cashFlows);
         const npv = calculateNPV(0.1, cashFlows); // Using 10% discount rate
         const payback = calculatePaybackPeriod(cashFlows);
+
+        console.log('Calculated metrics:', {
+          irr,
+          npv,
+          payback,
+          cashFlows,
+          years
+        });
 
         financialMetrics = `\nMetrics:\n` +
           `IRR=${irr.formatted}, NPV=${npv.formatted}, Payback=${payback.formatted}\n` +
@@ -51,9 +61,33 @@ export async function POST(req: Request) {
 
     // Prepare revenue info if available
     let revenueInfo = '';
-    if (tableData?.revenueRows) {
-      const rows = tableData.revenueRows;
-      revenueInfo = '\nRevenue:\n' + rows.map(row => {
+    let profitMarginInfo = '';
+    if (tableData?.revenueRows && tableData?.expenseRows) {
+      const revenueRows = tableData.revenueRows;
+      const expenseRows = tableData.expenseRows;
+      
+      // Calculate total revenue and expenses for each period
+      const totalRevenue = revenueRows.find(row => row.isCalculated && row.label === 'Total Gross Revenue');
+      const totalExpenses = expenseRows.find(row => row.isCalculated && row.label === 'Total Expenses');
+      
+      if (totalRevenue && totalExpenses) {
+        const revenues = totalRevenue.values.map(v => parseFloat(v) || 0);
+        const expenses = totalExpenses.values.map(v => parseFloat(v) || 0);
+        
+        // Calculate profit margins for each period
+        profitMarginInfo = '\nProfit Margins:\n' + revenues.map((rev, i) => {
+          const margin = rev === 0 ? 0 : ((rev - expenses[i]) / rev) * 100;
+          return `${periodLabels[i]}: ${margin.toFixed(1)}%`;
+        }).join('\n');
+        
+        // Calculate overall profit margin
+        const totalRev = revenues.reduce((a, b) => a + b, 0);
+        const totalExp = expenses.reduce((a, b) => a + b, 0);
+        const overallMargin = totalRev === 0 ? 0 : ((totalRev - totalExp) / totalRev) * 100;
+        profitMarginInfo += `\nOverall Profit Margin: ${overallMargin.toFixed(1)}%`;
+      }
+      
+      revenueInfo = '\nRevenue:\n' + revenueRows.map(row => {
         const values = row.values.map((val, i) => `${periodLabels[i]}: ${formatCurrency(parseFloat(val) || 0)}`);
         return `${row.label}:\n- Values: ${values.join(', ')}\n- Total: ${formatCurrency(row.total)}\n- Per Unit: ${formatCurrency(row.perUnit || 0)}`;
       }).join('\n\n');
@@ -114,17 +148,32 @@ export async function POST(req: Request) {
         content: 'You are a financial analyst. Rules:\n' +
                 '1. Use ONLY provided metrics and data\n' +
                 '2. Keep responses BRIEF and DIRECT\n' +
-                '3. Return JSON with "text" and "chartData"\n' +
-                '4. Do NOT explain calculations in detail\n\n' +
-                'Examples of good responses:\n' +
-                '{"text": "Profit margin is 15%", "chartData": {"data": [{"year": "Y1", "margin": 15}], "xAxis": "year", "yAxis": "margin"}}\n\n' +
-                '{"text": "Revenue trend is growing: Y1: $500K, Y2: $750K", "chartData": {"data": [{"year": "Y1", "value": 500000}, {"year": "Y2", "value": 750000}], "xAxis": "year", "yAxis": "value"}}\n\n' +
-                '{"text": "Ending balance is $100K", "chartData": {"data": [{"year": "Y1", "Beginning": 80000, "Ending": 100000}], "xAxis": "year", "yAxis": "amount"}}\n\n' +
+                '3. ALWAYS return JSON with both "text" and "chartData"\n' +
+                '4. For peak equity analysis:\n' +
+                '   - Answer format: "Peak equity $X.XXM occurs in YN."\n' +
+                '   - DO NOT show calculations in the response\n' +
+                '5. ALWAYS include a chart showing the trend or comparison\n' +
+                '6. When analyzing investment needs, take expenses as investments if the calculation requires investment components (e.g., ROI)\n' +
+                '7. Peak equity is calculated as the NEGATIVE of the lowest cumulative cash flow\n' +
+                '8. Cash multiple is calculated as:\n' +
+                '   - Total Revenue = Sum of all revenue across all years\n' +
+                '   - Total Expenses = Sum of all expenses across all years\n' +
+                '   - Peak Equity = Negative of lowest cumulative cash flow\n' +
+                '   - Cash Multiple = (Total Revenue - Total Expenses) / Peak Equity\n' +
+                '   Example:\n' +
+                '   - Total Revenue = $150M\n' +
+                '   - Total Expenses = $90M\n' +
+                '   - Peak Equity = $20M\n' +
+                '   - Cash Multiple = ($150M - $90M) / $20M = 3.0x\n\n' +
+                'Example responses:\n' +
+                '{"text": "Peak equity $23.74M occurs in Y5.", "chartData": {"data": [{"year": "Y1", "cumFlow": -6580000}, {"year": "Y2", "cumFlow": -9370000}, {"year": "Y3", "cumFlow": -13600000}, {"year": "Y4", "cumFlow": -20810000}, {"year": "Y5", "cumFlow": -23740000}, {"year": "Y6", "cumFlow": -21440000}, {"year": "Y7", "cumFlow": -8220000}, {"year": "Y8", "cumFlow": 3820000}, {"year": "Y9", "cumFlow": 13180000}, {"year": "Y10", "cumFlow": 11440000}, {"year": "Y11", "cumFlow": 11580000}, {"year": "Y12", "cumFlow": 11580000}, {"year": "Y13", "cumFlow": 11580000}], "xAxis": "year", "yAxis": "cumFlow", "title": "Cumulative Cash Flow Over Time"}}\n\n' +
+                '{"text": "Cash multiple is 3.0x.", "chartData": {"data": [{"category": "Revenue", "amount": 150000000}, {"category": "Expenses", "amount": 90000000}, {"category": "Net", "amount": 60000000}], "xAxis": "category", "yAxis": "amount", "title": "Revenue and Expenses"}}\n\n' +
                 (financialMetrics ? financialMetrics : 'No financial metrics available.') +
                 (revenueInfo ? revenueInfo : '\nNo revenue data available.') +
                 (expenseInfo ? expenseInfo : '\nNo expense data available.') +
                 (lotsInfo ? lotsInfo : '\nNo lots data available.') +
-                (debtFinancingInfo ? debtFinancingInfo : '\nNo debt financing data available.')
+                (debtFinancingInfo ? debtFinancingInfo : '\nNo debt financing data available.') +
+                (profitMarginInfo ? profitMarginInfo : '\nNo profit margin data available.')
       },
       ...messages.map((msg: any) => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
