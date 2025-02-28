@@ -26,6 +26,33 @@ OPENAI_API_KEY=your_api_key_here
 npm run dev
 ```
 
+### Troubleshooting Common Issues
+
+If you encounter any issues while running the application:
+
+1. **Dependencies Issues**:
+   - If you see Chakra UI/Framer Motion related errors, try:
+   ```bash
+   npm install framer-motion@11
+   ```
+   - Then restart the development server
+
+2. **Port Already in Use**:
+   - The app will automatically try the next available port (e.g., 3001)
+   - You can manually specify a port:
+   ```bash
+   npm run dev -- -p 3002
+   ```
+
+3. **API Key Issues**:
+   - Ensure your `.env.local` file is in the root directory
+   - Restart the development server after adding/modifying the API key
+
+4. **General Issues**:
+   - Try clearing npm cache: `npm cache clean --force`
+   - Delete `node_modules` and run `npm install` again
+   - Ensure you're using Node.js version 18.x
+
 ## Deployment
 
 The application is deployed on Heroku. To deploy your own instance:
